@@ -105,13 +105,16 @@ def _consolidate(
     result: dict[str, LayerBasis] = {}
 
     for layer_name in layer_names:
-        stacked = torch.stack([b_matrices[aid][layer_name] for aid in adapter_ids], dim=0)
+        # torch.linalg.svd (used below) doesn't support half/bfloat16 on CPU, and PCA
+        # benefits from the extra precision anyway -- upcast once here regardless of the
+        # dtype the adapters were trained/saved in.
+        stacked = torch.stack([b_matrices[aid][layer_name] for aid in adapter_ids], dim=0).float()
         # stacked: (M, out_features, rank)
         _, _, rank = stacked.shape
 
         sqrt_fisher = None
         if weights is not None:
-            sqrt_fisher = weights[layer_name].clamp_min(1e-12).sqrt()  # (out_features,)
+            sqrt_fisher = weights[layer_name].float().clamp_min(1e-12).sqrt()  # (out_features,)
 
         means, bases, coords, dims = [], [], [], []
         for r in range(rank):
