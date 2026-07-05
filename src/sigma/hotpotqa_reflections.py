@@ -217,6 +217,11 @@ def generate_reflection_with_openai(
         "question": example.question,
         "answer": example.answer,
         "supporting_facts": example.supporting_facts,
+        # type ("bridge"/"comparison") and level ("easy"/"medium"/"hard") let
+        # reflection_dataset.load_qa_examples() filter into pseudo-tasks, so a memory
+        # tree (build_memory_tree.py) can be exercised from HotpotQA alone.
+        "type": example.type,
+        "level": example.level,
     }
     return parsed
 
@@ -234,6 +239,8 @@ def generate_reflection_record(example: HotpotQAExample) -> dict[str, Any]:
         "supporting_facts": example.supporting_facts,
         "context": example.context,
         "prompt": build_reflection_prompt(example),
+        "type": example.type,
+        "level": example.level,
     }
 
 

@@ -19,6 +19,7 @@ from .adapters.shared_lora import attach_shared_lora
 from .consolidate.generator import CoordinateGenerator, train_generator
 from .consolidate.pca import compute_diagonal_fisher, consolidate_cloud, fisher_weighted_consolidate
 from .memory.entry import CoordinateLayout, MemoryEntry
+from .memory.signature import fit_signature
 from .reflection_dataset import build_prompt, bootstrap_subsets, load_qa_examples
 from .utils.context_embedding import compute_context_embedding
 
@@ -39,6 +40,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--generator_hidden_dim", type=int, default=256)
     parser.add_argument("--generator_epochs", type=int, default=200)
     parser.add_argument("--generator_lr", type=float, default=1e-3)
+    parser.add_argument(
+        "--shrinkage",
+        type=float,
+        default=0.1,
+        help="Task-signature variance shrinkage toward the mean (0=plain sample variance, "
+        "higher=more stable with few bootstrap subsets); only matters if this entry is "
+        "later put into a MemoryTree (build_memory_tree.py)",
+    )
     return parser.parse_args()
 
 
@@ -67,7 +76,13 @@ def main() -> None:
     for name, adapter in adapters.items():
         adapter.A.copy_(shared_A[name].to(adapter.A.dtype))
 
-    examples = load_qa_examples(args.reflections_path)
+    # Read question_type/level from bootstrap_meta.json (saved by train_bootstrap.py)
+    # rather than a separate CLI flag here, so the exact same filtered subsets used
+    # during bootstrap training get reconstructed automatically -- no risk of the user
+    # passing mismatched filters across the two steps.
+    examples = load_qa_examples(
+        args.reflections_path, type_filter=meta.get("question_type"), level_filter=meta.get("level")
+    )
     subsets = bootstrap_subsets(
         examples, num_subsets=meta["num_adapters"], subset_size=meta.get("bootstrap_size"), seed=meta["seed"]
     )
@@ -117,7 +132,25 @@ def main() -> None:
         generator, contexts_tensor, targets_tensor, num_epochs=args.generator_epochs, learning_rate=args.generator_lr
     )
 
-    entry = MemoryEntry(shared_A=shared_A, layer_bases=layer_bases, layout=layout, generator=generator)
+    # The task's "key": a signature over its context embeddings, fit from the same
+    # per-subset embeddings used to train the generator above. Only needed if this
+    # entry is later inserted into a MemoryTree (build_memory_tree.py); harmless
+    # (and cheap -- a couple of small vectors) to always compute and keep.
+    signature = fit_signature(contexts_tensor, shrinkage=args.shrinkage)
+    logger.info(
+        f"Task signature: {signature.num_samples} samples, "
+        f"variance spectrum (top 5) = {signature.spectrum[:5].tolist()}"
+    )
+
+    entry = MemoryEntry(
+        shared_A=shared_A,
+        layer_bases=layer_bases,
+        layout=layout,
+        generator=generator,
+        signature=signature,
+        training_contexts=contexts_tensor,
+        training_targets=targets_tensor,
+    )
     args.output_path.parent.mkdir(parents=True, exist_ok=True)
     entry.save(args.output_path)
     logger.info(f"Saved MemoryEntry to {args.output_path}")

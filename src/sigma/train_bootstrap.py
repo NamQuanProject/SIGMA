@@ -28,6 +28,19 @@ DEFAULT_TARGET_MODULES = (r"q_proj$", r"v_proj$")
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Train bootstrapped shared-A LoRA adapters on Q_final")
     parser.add_argument("--reflections_path", type=Path, required=True)
+    parser.add_argument(
+        "--question_type",
+        type=str,
+        default=None,
+        help="Keep only examples with this HotpotQA question type ('bridge'/'comparison'), "
+        "to build one task of a multi-task MemoryTree from a single reflections file",
+    )
+    parser.add_argument(
+        "--level",
+        type=str,
+        default=None,
+        help="Keep only examples with this HotpotQA difficulty level ('easy'/'medium'/'hard')",
+    )
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
     parser.add_argument("--num_adapters", type=int, default=8, help="M: number of bootstrapped adapters")
@@ -116,7 +129,13 @@ def main() -> None:
         logger.warning(f"CUDA not available to this Python/torch install -- training will run on {accelerator.device}")
 
     logger.info(f"Loading Q_final from {args.reflections_path}")
-    examples = load_qa_examples(args.reflections_path)
+    examples = load_qa_examples(args.reflections_path, type_filter=args.question_type, level_filter=args.level)
+    if not examples:
+        raise ValueError(
+            f"No examples left after filtering (question_type={args.question_type!r}, level={args.level!r}) -- "
+            "check the reflections file actually has that metadata (regenerate with the updated "
+            "hotpotqa_reflections.py if it predates type/level support)"
+        )
     logger.info(f"Loaded {len(examples)} QA examples")
 
     subsets = bootstrap_subsets(
@@ -170,6 +189,10 @@ def main() -> None:
         "bootstrap_size": args.bootstrap_size,
         "seed": args.seed,
         "layer_names": list(adapters),
+        # Persisted so run_consolidation.py reconstructs the *identical* filtered
+        # subsets automatically, without the user having to pass matching flags twice.
+        "question_type": args.question_type,
+        "level": args.level,
     }
     with (args.output_dir / "bootstrap_meta.json").open("w") as f:
         json.dump(meta, f, indent=2)

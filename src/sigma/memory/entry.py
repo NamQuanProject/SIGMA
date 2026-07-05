@@ -1,10 +1,14 @@
 """A consolidated SIGMA memory entry: the "value" bootstrap-and-consolidate produces for
 one task -- a per-layer basis plus a coordinate generator -- together with the shared
-frozen A its B-matrices are expressed against.
+frozen A its B-matrices are expressed against, and (optionally) the "key" side: a task
+signature plus the raw (context, alpha) training pairs used to fit the generator.
 
-This is what a leaf of SIGMA's cross-task memory tree (section 4.2.2) would store; for the
-single-task HotpotQA build, ``single_entry.py`` provides the trivial one-leaf "tree" that
-routes every query to this entry.
+This is what a leaf of SIGMA's cross-task memory tree (``memory/tree.py``, section 4.2.2)
+stores. For a single task, ``single_entry.py`` provides a trivial one-leaf "tree" that
+routes every query to this entry without needing a signature at all -- ``signature`` and
+the training pairs are only required once an entry is inserted into a real ``MemoryTree``
+(for GW-distance comparisons) or merged via ``tree.merge_entries`` (which needs the raw
+training pairs to retrain a merged generator).
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ import torch
 
 from ..consolidate.generator import CoordinateGenerator
 from ..consolidate.pca import LayerBasis
+from .signature import TaskSignature
 
 
 @dataclass
@@ -69,12 +74,22 @@ class CoordinateLayout:
 
 @dataclass
 class MemoryEntry:
-    """One consolidated task memory: value = (layer_bases, generator)."""
+    """One consolidated task memory: value = (layer_bases, generator), key = signature.
+
+    ``signature``/``training_contexts``/``training_targets`` are optional: the
+    single-task evaluation path (``single_entry.py``) never needs them, only
+    ``memory/tree.py`` does (to compare tasks via Gromov-Wasserstein distance and, for
+    ``training_contexts``/``training_targets``, to retrain a generator when merging two
+    confusable entries).
+    """
 
     shared_A: dict[str, torch.Tensor]
     layer_bases: dict[str, LayerBasis]
     layout: CoordinateLayout
     generator: CoordinateGenerator
+    signature: TaskSignature | None = None
+    training_contexts: torch.Tensor | None = None
+    training_targets: torch.Tensor | None = None
 
     def synthesize_adapter(self, context_embedding: torch.Tensor, *, num_samples: int = 1) -> dict[str, torch.Tensor]:
         """Reconstruct per-layer B' (eq. 23), averaging ``num_samples`` sampled alphas in
@@ -107,6 +122,9 @@ class MemoryEntry:
                     "alpha_dim": self.generator.alpha_dim,
                     "hidden_dim": self.generator.hidden_dim,
                 },
+                "signature": self.signature,
+                "training_contexts": self.training_contexts,
+                "training_targets": self.training_targets,
             },
             path,
         )
@@ -122,4 +140,10 @@ class MemoryEntry:
             layer_bases=payload["layer_bases"],
             layout=payload["layout"],
             generator=generator,
+            # .get() rather than direct indexing: entries saved before signatures/tree
+            # support existed won't have these keys, and should still load fine for the
+            # single-task path (which never touches them).
+            signature=payload.get("signature"),
+            training_contexts=payload.get("training_contexts"),
+            training_targets=payload.get("training_targets"),
         )

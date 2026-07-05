@@ -1,9 +1,16 @@
-"""Evaluate a SIGMA memory entry against the unmodified backbone on HotpotQA.
+"""Evaluate a SIGMA memory against the unmodified backbone on HotpotQA.
 
-For each validation question: compute the context embedding under the fundamentals-only
-adapter, route (trivially, single entry -- see ``memory/single_entry.py``), synthesize a
-task-specific adapter (eq. 23-24), patch it onto the frozen backbone, generate an answer,
-then compare against the same backbone with no adapter applied (baseline).
+Works with either a single-task ``MemoryEntry`` (``--memory_entry_path``) or a
+multi-task ``MemoryTree`` (``--memory_tree_path``, see ``build_memory_tree.py``) --
+exactly one is required. Both expose the same ``route(context_fn) -> (entry, context)``
+shape (``memory/single_entry.py``, ``memory/tree.py``), so the routing/synthesis/eval
+logic below doesn't need to know which one it has.
+
+For each HotpotQA validation question: route to a task (trivial for a single entry;
+GW-distance descent + own-space Mahalanobis for a tree, eq. 25-28), synthesize a
+task-specific adapter from the routed entry (eq. 23-24), patch it onto the frozen
+backbone, generate an answer, then compare against the same backbone with no adapter
+applied (baseline).
 """
 
 from __future__ import annotations
@@ -19,9 +26,10 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .backends import build_backend
 from .hotpotqa_reflections import load_hotpotqa_examples
-from .memory.apply import apply_adapter, attach_memory
+from .memory.apply import apply_adapter, apply_entry, attach_memory, attach_memory_tree
 from .memory.entry import MemoryEntry
 from .memory.single_entry import SingleEntryMemory
+from .memory.tree import MemoryTree
 from .reflection_dataset import build_prompt
 from .utils.context_embedding import compute_context_embedding
 from .utils.env import load_environment
@@ -31,8 +39,12 @@ DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat1
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a SIGMA memory entry on HotpotQA")
-    parser.add_argument("--memory_entry_path", type=Path, required=True)
+    parser = argparse.ArgumentParser(description="Evaluate a SIGMA memory on HotpotQA")
+    memory_group = parser.add_mutually_exclusive_group(required=True)
+    memory_group.add_argument("--memory_entry_path", type=Path, default=None, help="A single-task MemoryEntry")
+    memory_group.add_argument(
+        "--memory_tree_path", type=Path, default=None, help="A multi-task MemoryTree (build_memory_tree.py)"
+    )
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--split", type=str, default="validation")
     parser.add_argument("--dataset_name", type=str, default=None, help="Override the HF HotpotQA repo id")
@@ -104,20 +116,21 @@ def main() -> None:
     model = AutoModelForCausalLM.from_pretrained(args.model_name_or_path, torch_dtype=dtype)
     model.resize_token_embeddings(len(tokenizer))
 
-    entry = MemoryEntry.load(args.memory_entry_path)
-    memory = SingleEntryMemory(entry)
-    adapters = attach_memory(model, entry)
+    if args.memory_tree_path is not None:
+        memory = MemoryTree.load(args.memory_tree_path)
+        adapters = attach_memory_tree(model, memory)
+        logger.info(f"Loaded MemoryTree with tasks: {[leaf.name for leaf in memory.leaves()]}")
+    else:
+        entry = MemoryEntry.load(args.memory_entry_path)
+        memory = SingleEntryMemory(entry)
+        adapters = attach_memory(model, entry)
 
-    # attach_memory adds SharedLoRALinear wrappers (frozen base + shared A + zero-init B)
-    # -- move the *whole* patched model to the target device/dtype in one shot, same order
-    # train_bootstrap.py uses (attach adapters, then place on device).
+    # attach_memory/attach_memory_tree add SharedLoRALinear wrappers (frozen base +
+    # shared A + zero-init B) -- move the *whole* patched model to the target
+    # device/dtype in one shot, same order train_bootstrap.py uses (attach adapters,
+    # then place on device).
     model = model.to(device)
     model.eval()
-
-    # Fundamentals-only adapter (b̄, no steering) -- matches how context embeddings were
-    # computed during consolidation (run_consolidation.py), so the generator sees inputs
-    # from the same distribution it was trained on.
-    fundamentals = {name: basis.mean.t() for name, basis in entry.layer_bases.items()}
 
     examples = list(
         load_hotpotqa_examples(
@@ -151,18 +164,23 @@ def main() -> None:
                 generate_answer(model, tokenizer, example.question, max_new_tokens=args.max_new_tokens)
             )
 
-        with apply_adapter(adapters, fundamentals):
-            context = compute_context_embedding(model, tokenizer, [build_prompt(example.question)])
-        # entry.layer_bases / entry.generator are kept on CPU (they're tiny -- a couple of
-        # small matrices and an MLP -- no need to ever move them to the GPU); the context
-        # embedding comes back on the backbone's device, so bring it back to CPU before
-        # handing it to the generator/basis math in synthesize_adapter.
-        context = context.cpu()
+        def context_fn(entry: MemoryEntry, question: str = example.question) -> torch.Tensor:
+            # Fundamentals-only adapter (b̄, no steering) for *this* entry -- matches how
+            # context embeddings were computed during its consolidation
+            # (run_consolidation.py), so its generator sees inputs from the same
+            # distribution it was trained on. Different tree entries have different A/basis,
+            # hence apply_entry (which swaps both) rather than apply_adapter (B only).
+            fundamentals = {name: basis.mean.t() for name, basis in entry.layer_bases.items()}
+            with apply_entry(adapters, entry, fundamentals):
+                embedding = compute_context_embedding(model, tokenizer, [build_prompt(question)])
+            # entry.layer_bases / entry.generator are kept on CPU (tiny compared to the
+            # backbone) -- bring the embedding back before any generator/basis math.
+            return embedding.cpu()
 
-        routed_entry = memory.route(context)
+        routed_entry, context = memory.route(context_fn)
         b_prime = routed_entry.synthesize_adapter(context, num_samples=args.num_samples)
 
-        with apply_adapter(adapters, b_prime):
+        with apply_entry(adapters, routed_entry, b_prime):
             sigma_predictions.append(
                 generate_answer(model, tokenizer, example.question, max_new_tokens=args.max_new_tokens)
             )

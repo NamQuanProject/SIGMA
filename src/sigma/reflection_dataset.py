@@ -21,19 +21,38 @@ IGNORE_INDEX = -100
 
 @dataclass(frozen=True)
 class QAExample:
-    """One (question, answer) pair drawn from Q_final."""
+    """One (question, answer) pair drawn from Q_final.
+
+    ``question_type``/``level`` are HotpotQA's own metadata (bridge vs. comparison
+    questions; easy/medium/hard), carried through from the reflection record if present
+    (older reflection files predate this and will just have ``None`` here). They exist
+    solely so ``load_qa_examples`` can filter into pseudo-tasks for exercising a
+    ``MemoryTree`` from HotpotQA alone -- see ``train_bootstrap.py --question_type``.
+    """
 
     example_id: str
     question: str
     answer: str
+    question_type: str | None = None
+    level: str | None = None
 
 
-def load_qa_examples(reflections_path: Path) -> list[QAExample]:
+def load_qa_examples(
+    reflections_path: Path,
+    *,
+    type_filter: str | None = None,
+    level_filter: str | None = None,
+) -> list[QAExample]:
     """Load Q_final from a reflections JSONL file.
 
     Prefers the ``rewritten_qa`` field produced by the reflection pipeline (an improved
     question/answer pair preserving the gold answer). Falls back to the original
     ``source.question`` / ``source.answer`` when ``rewritten_qa`` is missing or malformed.
+
+    ``type_filter``/``level_filter``, if given, keep only examples whose ``question_type``
+    /``level`` matches (case-insensitive) -- e.g. ``type_filter="bridge"`` to build a
+    "bridge questions" pseudo-task. Examples predating this metadata (``question_type``/
+    ``level`` both ``None``) are dropped by either filter, since there's nothing to match.
     """
 
     examples: list[QAExample] = []
@@ -43,7 +62,12 @@ def load_qa_examples(reflections_path: Path) -> list[QAExample]:
             if not line:
                 continue
             record = json.loads(line)
-            examples.append(_record_to_example(record))
+            example = _record_to_example(record)
+            if type_filter is not None and (example.question_type or "").lower() != type_filter.lower():
+                continue
+            if level_filter is not None and (example.level or "").lower() != level_filter.lower():
+                continue
+            examples.append(example)
     return examples
 
 
@@ -65,7 +89,16 @@ def _record_to_example(record: dict[str, Any]) -> QAExample:
     if not question or not answer:
         raise ValueError(f"Record {example_id!r} has no usable question/answer pair")
 
-    return QAExample(example_id=example_id, question=str(question).strip(), answer=str(answer).strip())
+    question_type = source.get("type") or record.get("type")
+    level = source.get("level") or record.get("level")
+
+    return QAExample(
+        example_id=example_id,
+        question=str(question).strip(),
+        answer=str(answer).strip(),
+        question_type=question_type,
+        level=level,
+    )
 
 
 def build_prompt(question: str) -> str:
