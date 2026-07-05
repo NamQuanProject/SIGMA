@@ -111,6 +111,11 @@ class AnswerMaskedDataset(Dataset):
         answer = " " + example.answer.strip()
 
         prompt_ids = self.tokenizer(prompt, add_special_tokens=False)["input_ids"]
+        bos_id = self.tokenizer.bos_token_id
+        if bos_id is not None:
+            # Match what tokenizer(prompt) with default add_special_tokens=True would
+            # produce at inference time (evaluate_sigma.py), so train/eval prompts line up.
+            prompt_ids = [bos_id] + prompt_ids
         answer_ids = self.tokenizer(answer, add_special_tokens=False)["input_ids"]
         eos_id = self.tokenizer.eos_token_id
         if eos_id is not None:
