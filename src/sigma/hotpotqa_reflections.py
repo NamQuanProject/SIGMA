@@ -24,7 +24,13 @@ except ImportError:  # pragma: no cover - optional dependency guard
     load_dotenv = None
 
 
-DEFAULT_DATASET_NAME = "hotpot_qa"
+DEFAULT_DATASET_NAME = "hotpotqa/hotpot_qa"
+# Hugging Face deprecated script-based dataset repos (e.g. the original bare "hotpot_qa",
+# which required executing a loading script); newer huggingface_hub/datasets versions
+# refuse to resolve it at all ("Repository id must be 'namespace/name'"). The dataset now
+# lives under the namespaced, script-free mirror below. Keep the legacy id as a fallback
+# for older environments that still have script execution support.
+DATASET_NAME_CANDIDATES = ("hotpotqa/hotpot_qa", "hotpot_qa")
 DEFAULT_DATASET_CONFIGS = ("distractor", "fullwiki")
 
 
@@ -44,6 +50,7 @@ class HotpotQAExample:
 def load_hotpotqa_examples(
     *,
     split: str = "train",
+    dataset_name: str | None = None,
     config: str | None = None,
     streaming: bool = False,
     limit: int | None = None,
@@ -51,23 +58,29 @@ def load_hotpotqa_examples(
 ) -> Iterator[HotpotQAExample]:
     """Yield normalized HotpotQA examples.
 
-    The Hugging Face dataset is commonly exposed under the `hotpot_qa` name with
-    the `distractor` and `fullwiki` configurations. If `config` is not supplied,
-    we try those in order.
+    The Hugging Face dataset is commonly exposed with `distractor` and `fullwiki`
+    configurations. If `config` is not supplied, we try those in order. If
+    `dataset_name` is not supplied, we try `DATASET_NAME_CANDIDATES` in order (the
+    namespaced mirror first, then the legacy script-based repo id as a fallback).
     """
 
+    dataset_names = (dataset_name,) if dataset_name else DATASET_NAME_CANDIDATES
     configs = (config,) if config else DEFAULT_DATASET_CONFIGS
+
     dataset = None
     last_error: Exception | None = None
-    for candidate in configs:
-        try:
-            dataset = load_dataset(DEFAULT_DATASET_NAME, candidate, split=split, streaming=streaming)
+    for candidate_name in dataset_names:
+        for candidate_config in configs:
+            try:
+                dataset = load_dataset(candidate_name, candidate_config, split=split, streaming=streaming)
+                break
+            except Exception as exc:  # pragma: no cover - fallback path
+                last_error = exc
+        if dataset is not None:
             break
-        except Exception as exc:  # pragma: no cover - fallback path
-            last_error = exc
     if dataset is None:
         raise RuntimeError(
-            f"Could not load {DEFAULT_DATASET_NAME!r} with configs {configs!r}"
+            f"Could not load HotpotQA from any of {dataset_names!r} with configs {configs!r}"
         ) from last_error
 
     if streaming:
@@ -239,6 +252,11 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="Generate QA reflections from HotpotQA.")
     parser.add_argument("--split", default="train")
+    parser.add_argument(
+        "--dataset_name",
+        default=None,
+        help=f"Override the HF dataset repo id (default: try {DATASET_NAME_CANDIDATES!r} in order)",
+    )
     parser.add_argument("--config", default=None, help="hotpot_qa config, usually distractor or fullwiki")
     parser.add_argument("--limit", type=int, default=None, help="Maximum number of examples to process")
     parser.add_argument("--streaming", action="store_true", help="Use streaming dataset access")
@@ -255,6 +273,7 @@ def main() -> None:
 
     examples = load_hotpotqa_examples(
         split=args.split,
+        dataset_name=args.dataset_name,
         config=args.config,
         streaming=args.streaming,
         limit=args.limit,

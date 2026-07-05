@@ -30,6 +30,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--memory_entry_path", type=Path, required=True)
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--split", type=str, default="validation")
+    parser.add_argument("--dataset_name", type=str, default=None, help="Override the HF HotpotQA repo id")
     parser.add_argument("--config", type=str, default=None)
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--max_new_tokens", type=int, default=16)
@@ -75,7 +76,13 @@ def main() -> None:
     fundamentals = {name: basis.mean.t() for name, basis in entry.layer_bases.items()}
 
     examples = list(
-        load_hotpotqa_examples(split=args.split, config=args.config, limit=args.limit, seed=args.seed)
+        load_hotpotqa_examples(
+            split=args.split,
+            dataset_name=args.dataset_name,
+            config=args.config,
+            limit=args.limit,
+            seed=args.seed,
+        )
     )
     logger.info(f"Evaluating on {len(examples)} HotpotQA examples")
 
