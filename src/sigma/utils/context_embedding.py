@@ -24,7 +24,10 @@ def compute_context_embedding(
     ).to(device)
 
     outputs = model(**encoded, output_hidden_states=True)
-    last_hidden = outputs.hidden_states[-1]  # (batch, seq, hidden)
+    last_hidden = outputs.hidden_states[-1].float()  # (batch, seq, hidden)
+    # Upcast to float32 regardless of the backbone's compute dtype (e.g. bf16) -- this is
+    # what feeds CoordinateGenerator, whose params are float32, so keep it consistent
+    # end to end rather than relying on every caller to cast.
     mask = encoded["attention_mask"].unsqueeze(-1).to(last_hidden.dtype)
     summed = (last_hidden * mask).sum(dim=1)
     counts = mask.sum(dim=1).clamp_min(1.0)
