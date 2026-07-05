@@ -2,3 +2,5 @@ ideas/
 .env
 env/
 MemoryDecoder/
+data/
+runs/

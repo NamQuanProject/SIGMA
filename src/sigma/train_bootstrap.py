@@ -16,6 +16,7 @@ import torch
 from accelerate import Accelerator
 from loguru import logger
 from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .adapters.shared_lora import attach_shared_lora, collect_B_matrices, reset_all_B, trainable_parameters
@@ -34,7 +35,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target_modules", type=str, nargs="+", default=list(DEFAULT_TARGET_MODULES))
     parser.add_argument("--bootstrap_size", type=int, default=None, help="Defaults to len(Q_final)")
     parser.add_argument("--num_train_epochs", type=int, default=3)
-    parser.add_argument("--per_device_train_batch_size", type=int, default=4)
+    parser.add_argument(
+        "--per_device_train_batch_size",
+        type=int,
+        default=2,
+        help="Kept small by default since bootstrapped adapters retrain from scratch M times; raise it if GPU memory allows",
+    )
     parser.add_argument("--learning_rate", type=float, default=1e-3)
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
@@ -50,6 +56,7 @@ def train_one_adapter(
     accelerator: Accelerator,
     tokenizer,
     args: argparse.Namespace,
+    adapter_index: int,
 ) -> float:
     reset_all_B(adapters)
     params = list(trainable_parameters(adapters))
@@ -68,7 +75,13 @@ def train_one_adapter(
     model.train()
     last_loss = 0.0
     for epoch in range(args.num_train_epochs):
-        for batch in dataloader:
+        progress = tqdm(
+            dataloader,
+            desc=f"adapter {adapter_index} | epoch {epoch}",
+            disable=not accelerator.is_local_main_process,
+            leave=False,
+        )
+        for batch in progress:
             outputs = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
@@ -79,6 +92,7 @@ def train_one_adapter(
             optimizer.step()
             optimizer.zero_grad()
             last_loss = outputs.loss.item()
+            progress.set_postfix(loss=f"{last_loss:.4f}")
         logger.info(f"  epoch {epoch}: loss={last_loss:.4f}")
     model.eval()
     return last_loss
@@ -92,6 +106,14 @@ def main() -> None:
 
     accelerator = Accelerator(mixed_precision=args.mixed_precision)
     torch.manual_seed(args.seed)
+
+    if torch.cuda.is_available():
+        logger.info(
+            f"CUDA available: {torch.cuda.device_count()}x {torch.cuda.get_device_name(0)} "
+            f"-- accelerator will use device={accelerator.device}"
+        )
+    else:
+        logger.warning(f"CUDA not available to this Python/torch install -- training will run on {accelerator.device}")
 
     logger.info(f"Loading Q_final from {args.reflections_path}")
     examples = load_qa_examples(args.reflections_path)
@@ -112,16 +134,29 @@ def main() -> None:
     logger.info(f"Attached shared-A LoRA to {len(adapters)} layers: {list(adapters)}")
 
     model = accelerator.prepare(model)
+    model_device = next(model.parameters()).device
+    logger.info(f"Model parameters are on device: {model_device}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     shared_A = {name: adapter.A.detach().cpu() for name, adapter in adapters.items()}
     torch.save(shared_A, args.output_dir / "shared_A.pt")
 
-    for m, subset in enumerate(subsets):
-        logger.info(f"Bootstrapped adapter {m + 1}/{len(subsets)} on {len(subset)} examples")
+    adapter_progress = tqdm(
+        list(enumerate(subsets)), desc="Bootstrapping adapters", disable=not accelerator.is_local_main_process
+    )
+    for m, subset in adapter_progress:
+        adapter_progress.set_description(f"Bootstrapping adapter {m + 1}/{len(subsets)}")
         dataset = AnswerMaskedDataset(subset, tokenizer, max_length=args.max_length)
-        train_one_adapter(model, adapters, dataset, accelerator=accelerator, tokenizer=tokenizer, args=args)
+        last_loss = train_one_adapter(
+            model, adapters, dataset, accelerator=accelerator, tokenizer=tokenizer, args=args, adapter_index=m
+        )
+        adapter_progress.set_postfix(loss=f"{last_loss:.4f}")
+
+        if torch.cuda.is_available():
+            allocated = torch.cuda.memory_allocated() / 2**30
+            reserved = torch.cuda.memory_reserved() / 2**30
+            logger.info(f"  GPU memory: {allocated:.2f} GiB allocated / {reserved:.2f} GiB reserved")
 
         b_matrices = collect_B_matrices(adapters)
         b_matrices_cpu = {name: tensor.cpu() for name, tensor in b_matrices.items()}
