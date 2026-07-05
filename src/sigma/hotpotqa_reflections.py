@@ -18,10 +18,7 @@ from typing import Any, Iterable, Iterator
 from datasets import load_dataset
 from tqdm import tqdm
 
-try:
-    from dotenv import load_dotenv
-except ImportError:  # pragma: no cover - optional dependency guard
-    load_dotenv = None
+from .utils.env import load_environment
 
 
 DEFAULT_DATASET_NAME = "hotpotqa/hotpot_qa"
@@ -248,7 +245,7 @@ def write_jsonl(records: Iterable[dict[str, Any]], output_path: Path) -> None:
 
 
 def main() -> None:
-    _load_environment()
+    load_environment()
 
     parser = argparse.ArgumentParser(description="Generate QA reflections from HotpotQA.")
     parser.add_argument("--split", default="train")
@@ -325,24 +322,6 @@ def _take(iterable: Iterable[Any], limit: int) -> Iterator[Any]:
         if index >= limit:
             break
         yield item
-
-
-def _load_environment() -> None:
-    """Load environment variables from local .env files if available."""
-
-    if load_dotenv is None:
-        return
-
-    repo_root = Path(__file__).resolve().parents[2]
-    env_candidates = [
-        repo_root / ".env",
-        repo_root / ".env.local",
-        repo_root / ".env" / ".env",
-        repo_root / ".env" / "local.env",
-    ]
-    for candidate in env_candidates:
-        if candidate.is_file():
-            load_dotenv(candidate, override=False)
 
 
 if __name__ == "__main__":

@@ -17,12 +17,14 @@ from loguru import logger
 from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
+from .backends import build_backend
 from .hotpotqa_reflections import load_hotpotqa_examples
 from .memory.apply import apply_adapter, attach_memory
 from .memory.entry import MemoryEntry
 from .memory.single_entry import SingleEntryMemory
 from .reflection_dataset import build_prompt
 from .utils.context_embedding import compute_context_embedding
+from .utils.env import load_environment
 from .utils.metrics import aggregate_scores
 
 DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
@@ -52,6 +54,16 @@ def parse_args() -> argparse.Namespace:
         help="Call torch.cuda.empty_cache() every N examples to counter CUDA allocator "
         "fragmentation from generate()-in-a-loop with variable-length prompts (0 disables)",
     )
+    parser.add_argument(
+        "--baseline_model",
+        type=str,
+        default=None,
+        help="Optional extra comparison model spec, e.g. 'openai:gpt-4o-mini' or a local HF "
+        "path/repo id (bare strings default to a local HF model). Evaluated as a third set "
+        "of predictions alongside the unmodified local backbone and the SIGMA-adapted one. "
+        "Note: this can only ever be a comparison point -- the memory itself can only attach "
+        "to a local model whose weights/hidden states we control.",
+    )
     return parser.parse_args()
 
 
@@ -73,6 +85,7 @@ def main() -> None:
     args = parse_args()
     logger.remove()
     logger.add(sys.stdout, level="INFO")
+    load_environment()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     if args.dtype == "auto":
@@ -117,8 +130,16 @@ def main() -> None:
     )
     logger.info(f"Evaluating on {len(examples)} HotpotQA examples")
 
+    external_backend = None
+    if args.baseline_model:
+        logger.info(f"Building external comparison backend: {args.baseline_model!r}")
+        external_backend = build_backend(
+            args.baseline_model, device=device, dtype=dtype, max_new_tokens=args.max_new_tokens
+        )
+
     baseline_predictions: list[str] = []
     sigma_predictions: list[str] = []
+    external_predictions: list[str] = []
     golds: list[str] = []
 
     progress = tqdm(examples, desc="Evaluating")
@@ -146,6 +167,9 @@ def main() -> None:
                 generate_answer(model, tokenizer, example.question, max_new_tokens=args.max_new_tokens)
             )
 
+        if external_backend is not None:
+            external_predictions.append(external_backend.generate(example.question))
+
         # model.generate() in a tight loop with variable-length prompts (every HotpotQA
         # question is a different length) is a known way to fragment PyTorch's CUDA
         # caching allocator, causing generation to gradually get slower over hundreds of
@@ -158,6 +182,13 @@ def main() -> None:
 
     logger.info(f"Baseline: EM={baseline_scores['em']:.4f} F1={baseline_scores['f1']:.4f} (n={int(baseline_scores['n'])})")
     logger.info(f"SIGMA:    EM={sigma_scores['em']:.4f} F1={sigma_scores['f1']:.4f} (n={int(sigma_scores['n'])})")
+
+    if external_backend is not None:
+        external_scores = aggregate_scores(external_predictions, golds)
+        logger.info(
+            f"External ({args.baseline_model}): EM={external_scores['em']:.4f} "
+            f"F1={external_scores['f1']:.4f} (n={int(external_scores['n'])})"
+        )
 
 
 if __name__ == "__main__":
