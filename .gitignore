@@ -2,7 +2,6 @@ ideas/
 .env
 env/
 MemoryDecoder/
-data/
 runs/
 temp/
 **/__pycache__/
