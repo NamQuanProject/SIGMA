@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
+from tqdm.auto import tqdm
 
 from ..reflection_dataset import IGNORE_INDEX, QAExample, build_prompt
 
@@ -104,7 +105,7 @@ def _consolidate(
     layer_names = sorted(b_matrices[adapter_ids[0]].keys())
     result: dict[str, LayerBasis] = {}
 
-    for layer_name in layer_names:
+    for layer_name in tqdm(layer_names, desc="Consolidating layers"):
         # torch.linalg.svd (used below) doesn't support half/bfloat16 on CPU, and PCA
         # benefits from the extra precision anyway -- upcast once here regardless of the
         # dtype the adapters were trained/saved in.
@@ -176,7 +177,7 @@ def compute_diagonal_fisher(
     fisher_sums = {name: torch.zeros(adapter.B.shape[0], device=device) for name, adapter in adapters.items()}
 
     model.eval()
-    for example in holdout_examples:
+    for example in tqdm(holdout_examples, desc="Estimating Fisher"):
         for adapter in adapters.values():
             adapter.B.grad = None
 

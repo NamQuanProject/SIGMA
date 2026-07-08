@@ -12,6 +12,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm.auto import tqdm
 
 
 class CoordinateGenerator(nn.Module):
@@ -69,12 +70,17 @@ def train_generator(
     loader = DataLoader(dataset, batch_size=min(batch_size, len(dataset)), shuffle=True)
 
     generator.train()
-    for _ in range(num_epochs):
+    progress = tqdm(range(num_epochs), desc="Training coordinate generator")
+    for _ in progress:
+        epoch_loss, num_batches = 0.0, 0
         for context_batch, target_batch in loader:
             mu, log_var = generator(context_batch)
             loss = gaussian_nll_loss(mu, log_var, target_batch)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            epoch_loss += loss.item()
+            num_batches += 1
+        progress.set_postfix(loss=f"{epoch_loss / num_batches:.4f}")
     generator.eval()
     return generator

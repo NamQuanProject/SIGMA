@@ -12,6 +12,7 @@ from pathlib import Path
 
 import torch
 from loguru import logger
+from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .adapters.shared_lora import attach_shared_lora
@@ -111,7 +112,7 @@ def main() -> None:
         adapter.B.data.copy_(layer_bases[name].mean.t().to(adapter.B.dtype))
 
     contexts, targets = [], []
-    for m, subset in enumerate(subsets):
+    for m, subset in enumerate(tqdm(subsets, desc="Computing context embeddings")):
         prompts = [build_prompt(ex.question) for ex in subset]
         embedding = compute_context_embedding(model, tokenizer, prompts).mean(dim=0)
         contexts.append(embedding.cpu())
