@@ -16,9 +16,11 @@ from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 from datasets import load_dataset
+from loguru import logger
 from tqdm import tqdm
 
 from .utils.env import load_environment
+from .utils.logging_setup import setup_logging
 
 
 DEFAULT_DATASET_NAME = "hotpotqa/hotpot_qa"
@@ -273,7 +275,10 @@ def main() -> None:
     )
     parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
     args = parser.parse_args()
+
+    setup_logging("hotpotqa_reflections", log_dir=args.log_dir)
 
     examples = load_hotpotqa_examples(
         split=args.split,
@@ -287,6 +292,7 @@ def main() -> None:
     if args.mode == "prompt":
         records = (generate_reflection_record(example) for example in tqdm(examples, desc="exporting prompts"))
         write_jsonl(records, args.output)
+        logger.info(f"Wrote prompt records to {args.output}")
         return
 
     api_key = os.getenv("OPENAI_API_KEY")
@@ -296,6 +302,7 @@ def main() -> None:
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
+    logger.info(f"Generating reflections with model={args.model!r}")
 
     def _generated_records() -> Iterator[dict[str, Any]]:
         for example in tqdm(examples, desc="generating reflections"):
@@ -307,6 +314,7 @@ def main() -> None:
             )
 
     write_jsonl(_generated_records(), args.output)
+    logger.info(f"Wrote reflections to {args.output}")
 
 
 def _parse_json_object(text: str) -> dict[str, Any]:

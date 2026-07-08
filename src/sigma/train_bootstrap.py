@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
 import torch
@@ -21,6 +20,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .adapters.shared_lora import attach_shared_lora, collect_B_matrices, reset_all_B, trainable_parameters
 from .reflection_dataset import AnswerMaskedDataset, bootstrap_subsets, collate_answer_masked, load_qa_examples
+from .utils.logging_setup import setup_logging
 
 DEFAULT_TARGET_MODULES = (r"q_proj$", r"v_proj$")
 
@@ -58,6 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max_length", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--mixed_precision", type=str, default="no", choices=["no", "fp16", "bf16"])
+    parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
     return parser.parse_args()
 
 
@@ -113,9 +114,7 @@ def train_one_adapter(
 
 def main() -> None:
     args = parse_args()
-
-    logger.remove()
-    logger.add(sys.stdout, level="INFO")
+    setup_logging("train_bootstrap", log_dir=args.log_dir)
 
     accelerator = Accelerator(mixed_precision=args.mixed_precision)
     torch.manual_seed(args.seed)

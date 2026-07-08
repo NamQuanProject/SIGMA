@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from pathlib import Path
 
 import torch
@@ -22,6 +21,7 @@ from .memory.entry import CoordinateLayout, MemoryEntry
 from .memory.signature import fit_signature
 from .reflection_dataset import build_prompt, bootstrap_subsets, load_qa_examples
 from .utils.context_embedding import compute_context_embedding
+from .utils.logging_setup import setup_logging
 
 
 def parse_args() -> argparse.Namespace:
@@ -48,13 +48,13 @@ def parse_args() -> argparse.Namespace:
         "higher=more stable with few bootstrap subsets); only matters if this entry is "
         "later put into a MemoryTree (build_memory_tree.py)",
     )
+    parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    logger.remove()
-    logger.add(sys.stdout, level="INFO")
+    setup_logging("run_consolidation", log_dir=args.log_dir)
 
     meta = json.loads((args.bootstrap_dir / "bootstrap_meta.json").read_text())
     shared_A = torch.load(args.bootstrap_dir / "shared_A.pt", weights_only=True)

@@ -10,13 +10,13 @@ why the latter is required.
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 from loguru import logger
 
 from .memory.entry import MemoryEntry
 from .memory.tree import MemoryTree
+from .utils.logging_setup import setup_logging
 
 
 def parse_args() -> argparse.Namespace:
@@ -31,13 +31,13 @@ def parse_args() -> argparse.Namespace:
         "though 1 is allowed)",
     )
     parser.add_argument("--output_path", type=Path, required=True)
+    parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    logger.remove()
-    logger.add(sys.stdout, level="INFO")
+    setup_logging("build_memory_tree", log_dir=args.log_dir)
 
     entries: dict[str, MemoryEntry] = {}
     for item in args.task:

@@ -53,6 +53,11 @@ OPENAI_API_KEY=sk-...
 (A `.env/` folder layout — `.env/.env` or `.env/local.env` — also works, if you prefer
 that structure.)
 
+Every script in the pipeline (steps 0–4) logs to stdout *and* to a timestamped file
+under `logs/` (`logs/<script>_<timestamp>.log`, e.g. `logs/train_bootstrap_20260706_142301.log`),
+via `--log_dir` (default `logs`) and the shared `src/sigma/utils/logging_setup.py`
+helper. `logs/`, like `runs/`, is gitignored — nothing under it is meant to be committed.
+
 ## Pipeline overview
 
 Single task (steps 0-3):

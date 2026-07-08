@@ -16,7 +16,6 @@ applied (baseline).
 from __future__ import annotations
 
 import argparse
-import sys
 from pathlib import Path
 
 import torch
@@ -33,6 +32,7 @@ from .memory.tree import MemoryTree
 from .reflection_dataset import build_prompt
 from .utils.context_embedding import compute_context_embedding
 from .utils.env import load_environment
+from .utils.logging_setup import setup_logging
 from .utils.metrics import aggregate_scores
 
 DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}
@@ -76,6 +76,7 @@ def parse_args() -> argparse.Namespace:
         "Note: this can only ever be a comparison point -- the memory itself can only attach "
         "to a local model whose weights/hidden states we control.",
     )
+    parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
     return parser.parse_args()
 
 
@@ -95,8 +96,7 @@ def generate_answer(model, tokenizer, question: str, *, max_new_tokens: int) -> 
 
 def main() -> None:
     args = parse_args()
-    logger.remove()
-    logger.add(sys.stdout, level="INFO")
+    setup_logging("evaluate_sigma", log_dir=args.log_dir)
     load_environment()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
