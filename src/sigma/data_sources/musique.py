@@ -1,26 +1,13 @@
 """MuSiQue source adapter.
 
-Loaded from a **local JSON/JSONL file**, matching how MeMo's own pipeline consumes it
-(a local `hipporag2_dataset/musique.json` -- whose exact provenance isn't scripted in
-their repo; it appears to be repackaged from the HippoRAG2 release rather than MuSiQue's
-own distribution). MuSiQue isn't reliably published on Hugging Face, so this points
-instead at the dataset's own official release:
+Reads the **chunked corpus/questions JSONL** produced by ``process_musique.py`` -- this
+is the mandatory first stage, mirroring MEMO's own two-stage pipeline
+(``data_processing_utils`` -> ``data_synthesis_pipeline``). Run that script once before
+calling ``load_examples`` here; a missing/incomplete chunked file raises a clear error
+telling you to run it.
 
-Download::
-
-    https://github.com/StonyBrookNLP/musique
-
-See that repo's README for the actual dataset download link (a Google Drive zip at time
-of writing) -- `musique_ans_v1.0_{train,dev,test}.jsonl` for answerable-only questions,
-or `musique_full_v1.0_*` if you also want unanswerable ones. Point `--musique_path` at
-whichever split file you download.
-
-(I can't browse the web from here to re-verify this URL/the exact drive link still
-resolve -- if it's moved, search "MuSiQue Trivedi StonyBrookNLP dataset download".)
-
-Accepts either the official JSONL format (one JSON object per line) or a single JSON
-array/object (in case you're pointed at a re-packaged copy, e.g. from HippoRAG2's
-release) -- auto-detected from the file's first non-whitespace character.
+See ``process_musique.py`` for where the raw data comes from and what it does (chunks
+each paragraph, following MEMO's own ``convert_musique_to_chunks_jsonl.py`` algorithm).
 """
 
 from __future__ import annotations
@@ -37,74 +24,65 @@ DATASET_LABEL = "musique"
 
 def load_examples(
     *,
-    musique_path: str | Path,
+    musique_dir: str | Path,
     limit: int | None = None,
     seed: int = 42,
     **_ignored,
 ) -> Iterator[SourceExample]:
-    path = Path(musique_path)
-    if not path.is_file():
-        raise FileNotFoundError(
-            f"{path} not found -- --musique_path must point at a local MuSiQue JSON/JSONL "
-            "file (see https://github.com/StonyBrookNLP/musique for the download link)"
-        )
+    root = Path(musique_dir)
+    corpus_path = root / "musique_corpus_chunks.jsonl"
+    questions_path = root / "musique_questions_chunks.jsonl"
+    for path in (corpus_path, questions_path):
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Missing {path} -- run process_musique.py first (the mandatory chunking "
+                f"stage, mirroring MEMO's own data_processing_utils step): "
+                f"python process_musique.py --musique_path <your raw file> --output_dir {musique_dir}"
+            )
 
-    rows = _read_records(path)
+    corpus: dict[str, str] = {}
+    with corpus_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            corpus[row["docid"]] = row["text"]
+
+    rows: list[dict[str, Any]] = []
+    with questions_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
+
     if limit is not None and limit < len(rows):
         rows = random.Random(seed).sample(rows, limit)
 
     for row in rows:
-        yield _normalize_row(row)
+        yield _normalize_row(row, corpus)
 
 
-def _read_records(path: Path) -> list[dict[str, Any]]:
-    text = path.read_text(encoding="utf-8").strip()
-    if not text:
-        return []
-    # Genuine JSONL (the official MuSiQue format) also starts with "{", since every
-    # line is its own object -- so the first character can't tell JSONL apart from a
-    # single JSON value spanning the whole file. Try parsing the whole file first; a
-    # multi-line JSONL file fails that with "Extra data" (more than one top-level
-    # value), which is exactly the signal to fall back to per-line parsing.
-    try:
-        data = json.loads(text)
-    except json.JSONDecodeError:
-        return [json.loads(line) for line in text.splitlines() if line.strip()]
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        # Could be one big object keyed by id (record dicts as values) or a single record.
-        if data and all(isinstance(v, dict) for v in data.values()):
-            return list(data.values())
-        return [data]
-    raise ValueError(f"Unrecognized MuSiQue file format in {path}")
+def _normalize_row(row: dict[str, Any], corpus: dict[str, str]) -> SourceExample:
+    evidence_docids = [d["docid"] for d in row.get("evidence_docs") or [] if d.get("docid") in corpus]
+    negative_docids = [d["docid"] for d in row.get("negative_docs") or [] if d.get("docid") in corpus]
 
+    # Context includes both supporting *and* negative (distractor) chunks -- this is
+    # what gives reflection_pipeline.py's supporting-facts filtering (based on
+    # supporting_facts below) something real to filter, matching the same
+    # supporting/distractor distinction HotpotQA's context already has.
+    context = [{"title": docid, "sentences": [corpus[docid]]} for docid in evidence_docids + negative_docids]
+    supporting_facts = [{"title": docid, "sent_id": 0} for docid in evidence_docids]
 
-def _normalize_row(row: dict[str, Any]) -> SourceExample:
-    example_id = str(row.get("id") or row.get("_id") or "")
-    question = str(row.get("question") or "").strip()
-    answer = str(row.get("answer") or "").strip()
-
-    paragraphs = row.get("paragraphs") or []
-    context: list[dict[str, Any]] = []
-    supporting_facts: list[dict[str, Any]] = []
-    num_supporting = 0
-    for para in paragraphs:
-        title = para.get("title", "")
-        text = para.get("paragraph_text", "")
-        context.append({"title": title, "sentences": [text]})
-        if para.get("is_supporting"):
-            num_supporting += 1
-            supporting_facts.append({"title": title, "sent_id": para.get("idx")})
+    answers = row.get("answers") or []
+    answer = str(answers[0]).strip() if answers else ""
 
     return SourceExample(
         dataset=DATASET_LABEL,
-        example_id=f"musique-{example_id}",
-        question=question,
+        example_id=str(row.get("query_id") or ""),
+        question=str(row.get("question") or "").strip(),
         answer=answer,
         context=context,
         supporting_facts=supporting_facts,
-        # MuSiQue is explicitly a 2/3/4-hop benchmark; the paragraph-level is_supporting
-        # count is a direct, reliable proxy for hop count when no separate field is given.
-        type=f"{num_supporting}hop" if num_supporting else None,
+        type=row.get("hop"),
     )

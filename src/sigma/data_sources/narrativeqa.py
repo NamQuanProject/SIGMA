@@ -1,37 +1,26 @@
 """NarrativeQA source adapter.
 
-Loaded from a **local checkout** of the official NarrativeQA GitHub repo, matching how
-MeMo's own pipeline consumes it (a cloned repo + `documents.csv`/`qaps.csv`, not a
-Hugging Face dataset -- NarrativeQA isn't reliably published there).
+Reads the **chunked corpus/questions JSONL** produced by ``process_narrativeqa.py`` --
+this is the mandatory first stage, mirroring MEMO's own two-stage pipeline
+(``data_processing_utils`` -> ``data_synthesis_pipeline``). Run that script once per
+split before calling ``load_examples`` here; a missing/incomplete chunked file raises a
+clear error telling you to run it.
 
-Download::
-
-    git clone https://github.com/google-deepmind/narrativeqa
-
-That ships `documents.csv`, `qaps.csv`, and `third_party/wikipedia/summaries.csv`
-directly in the repo -- no extra download step needed for those three files. We use
-each story's Wikipedia plot **summary** as context, not the full book/script text, so
-you do NOT need to run the repo's separate `download_stories.sh` (which fetches full
-story text from Project Gutenberg / script archives -- slow, and not needed here).
-
-(I can't browse the web from here to re-verify this URL still resolves -- if the repo
-has moved, `--narrativeqa_dir` just needs to point at wherever you actually cloned it;
-the three CSV filenames above are what this loader looks for.)
+See ``process_narrativeqa.py`` for where the raw data comes from and what it does
+(chunks each story's Wikipedia summary, following MEMO's own
+``convert_narrativeqa_to_chunks_jsonl.py`` algorithm).
 """
 
 from __future__ import annotations
 
-import csv
+import json
 import random
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 from .base import SourceExample
 
 DATASET_LABEL = "narrativeqa"
-
-# NarrativeQA's own documents.csv/qaps.csv "set" column uses "valid", not "validation".
-_SPLIT_ALIASES = {"validation": "valid", "val": "valid", "dev": "valid"}
 
 
 def load_examples(
@@ -43,57 +32,53 @@ def load_examples(
     **_ignored,
 ) -> Iterator[SourceExample]:
     root = Path(narrativeqa_dir)
-    documents_csv = root / "documents.csv"
-    qaps_csv = root / "qaps.csv"
-    summaries_csv = root / "third_party" / "wikipedia" / "summaries.csv"
-    for path in (documents_csv, qaps_csv, summaries_csv):
+    corpus_path = root / f"narrativeqa_{split}_corpus_chunks.jsonl"
+    questions_path = root / f"narrativeqa_{split}_questions_chunks.jsonl"
+    for path in (corpus_path, questions_path):
         if not path.is_file():
             raise FileNotFoundError(
-                f"Missing {path} -- --narrativeqa_dir must point at a checkout of "
-                "https://github.com/google-deepmind/narrativeqa (git clone it; no further "
-                "download step is needed for these three CSVs specifically)"
+                f"Missing {path} -- run process_narrativeqa.py first (the mandatory "
+                f"chunking stage, mirroring MEMO's own data_processing_utils step): "
+                f"python process_narrativeqa.py --narrativeqa_dir {narrativeqa_dir} --split {split}"
             )
 
-    want_set = _SPLIT_ALIASES.get(split, split)
+    corpus: dict[str, str] = {}
+    with corpus_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            corpus[row["docid"]] = row["text"]
 
-    summary_by_doc: dict[str, str] = {}
-    with summaries_csv.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            summary_by_doc[row["document_id"]] = row.get("summary", "")
-
-    doc_ids_in_split: set[str] = set()
-    with documents_csv.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("set") == want_set:
-                doc_ids_in_split.add(row["document_id"])
-
-    if not doc_ids_in_split:
-        raise ValueError(
-            f"No documents found with set={want_set!r} in {documents_csv} -- check "
-            f"--split (NarrativeQA's own splits are 'train'/'valid'/'test')"
-        )
-
-    rows = []
-    with qaps_csv.open(newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("document_id") in doc_ids_in_split:
-                rows.append(row)
+    rows: list[dict[str, Any]] = []
+    with questions_path.open(encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line:
+                rows.append(json.loads(line))
 
     if limit is not None and limit < len(rows):
         rows = random.Random(seed).sample(rows, limit)
 
-    for index, row in enumerate(rows):
-        doc_id = row["document_id"]
-        summary_text = summary_by_doc.get(doc_id, "").strip()
-        question = (row.get("question") or "").strip()
-        # NarrativeQA gives two independently-written reference answers; use the first
-        # as the primary gold answer (same convention as our other single-answer sources).
-        answer = (row.get("answer1") or "").strip()
+    for row in rows:
+        yield _normalize_row(row, corpus)
 
-        yield SourceExample(
-            dataset=DATASET_LABEL,
-            example_id=f"narrativeqa-{doc_id}-{index}",
-            question=question,
-            answer=answer,
-            context=[{"title": doc_id, "sentences": [summary_text]}] if summary_text else [],
-        )
+
+def _normalize_row(row: dict[str, Any], corpus: dict[str, str]) -> SourceExample:
+    evidence_docids = [d["docid"] for d in row.get("evidence_docs") or [] if d.get("docid") in corpus]
+    context = [{"title": docid, "sentences": [corpus[docid]]} for docid in evidence_docids]
+    # NarrativeQA has no distractor/negative concept -- every evidence doc is supporting.
+    supporting_facts = [{"title": docid, "sent_id": 0} for docid in evidence_docids]
+
+    answers = row.get("answers") or []
+    answer = str(answers[0]).strip() if answers else ""
+
+    return SourceExample(
+        dataset=DATASET_LABEL,
+        example_id=str(row.get("query_id") or ""),
+        question=str(row.get("question") or "").strip(),
+        answer=answer,
+        context=context,
+        supporting_facts=supporting_facts,
+    )
