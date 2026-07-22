@@ -99,6 +99,71 @@ configs in order if `--config` isn't given. Each record also carries HotpotQA's 
 `type` (bridge/comparison) and `level` (easy/medium/hard) metadata, used in step 4 to
 carve pseudo-tasks out of one reflections file.
 
+### Other datasets: NarrativeQA, MuSiQue
+
+`generate_hotpotqa_reflections.py` stays HotpotQA-only (unchanged — `evaluate_sigma.py`
+still uses its loader for the HotpotQA eval path). `generate_reflections.py` is the same
+pipeline generalized to any dataset in `src/sigma/data_sources/`, currently HotpotQA,
+**NarrativeQA**, and **MuSiQue** — all normalized to the same schema, so the reflections
+JSONL and everything downstream (`reflection_dataset.py`, `train_bootstrap.py`,
+`run_consolidation.py`) works identically regardless of source dataset:
+
+```bash
+python generate_reflections.py --dataset musique --mode openai \
+    --output data/musique_reflections.jsonl --limit 100
+
+python generate_reflections.py --dataset narrativeqa --mode openai \
+    --output data/narrativeqa_reflections.jsonl --limit 100
+```
+
+Neither NarrativeQA nor MuSiQue is reliably published on Hugging Face, so — matching how
+MEMO's own repo actually consumes them — both load from **local files** instead of
+`datasets.load_dataset`:
+
+**NarrativeQA** — `--narrativeqa_dir` points at a local checkout of the official repo:
+
+```bash
+git clone https://github.com/google-deepmind/narrativeqa
+
+python generate_reflections.py --dataset narrativeqa --mode openai \
+    --narrativeqa_dir narrativeqa --output data/narrativeqa_reflections.jsonl --limit 100
+```
+
+That clone gives you `documents.csv`, `qaps.csv`, and `third_party/wikipedia/summaries.csv`
+directly — no extra download step needed for those three files. We use each story's
+Wikipedia plot **summary** as context (not the full book/script text — questions are
+written to be answerable from the summary, and full narrative text is often 50k+ words,
+impractical for one reflection prompt), so you do **not** need to run the repo's separate
+`download_stories.sh`.
+
+**MuSiQue** — `--musique_path` points at a local JSON/JSONL file:
+
+```bash
+# See https://github.com/StonyBrookNLP/musique for the actual dataset download link
+# (a Google Drive zip at time of writing) -- grab musique_ans_v1.0_train.jsonl or similar.
+
+python generate_reflections.py --dataset musique --mode openai \
+    --musique_path musique_ans_v1.0_train.jsonl --output data/musique_reflections.jsonl --limit 100
+```
+
+MuSiQue's paragraphs already carry `is_supporting` flags matching HotpotQA's
+supporting-facts convention. The loader accepts either the official one-JSON-object-per-line
+format or a single JSON array/object, auto-detected.
+
+I can't browse the web from this environment to re-verify those two GitHub URLs still
+resolve or that the download links on their READMEs haven't moved — if either 404s,
+search for "NarrativeQA deepmind github" / "MuSiQue StonyBrookNLP github" respectively.
+Missing `--narrativeqa_dir`/`--musique_path`, or a directory missing the expected files,
+raises a clear error telling you exactly what's needed rather than failing silently.
+
+The reflection prompt itself (`reflections.py`) asks for the same six fields as before,
+sharpened to match MEMO's actual five-stage synthesis more closely — direct vs. indirect
+facts, entity surfacing defined as "describe the entity without naming it," cross-document
+synthesis defined as combining evidence across context blocks — but still one LLM call
+per example, not MEMO's full multi-call pipeline (their fact-extraction step alone is two
+separate call-types, and their verification step is an iterative check/fix loop up to 12
+calls per QA pair — a lot more expensive than SIGMA's method needs).
+
 ## Step 1 — Bootstrap adapters
 
 Trains `M` LoRA adapters on bootstrapped (with-replacement) subsets of `Q_final`. All `M`
@@ -236,13 +301,20 @@ changes, since every backend just exposes `generate(question) -> str`.
 
 ```
 generate_hotpotqa_reflections.py   \
-train_bootstrap.py                  |
-run_consolidation.py                 \  thin root-level CLI wrappers around src/sigma/*
-evaluate_sigma.py                    /  (see each file's docstring for what it does)
+generate_reflections.py             |
+train_bootstrap.py                  |  thin root-level CLI wrappers around src/sigma/*
+run_consolidation.py                 \ (see each file's docstring for what it does)
+evaluate_sigma.py                    /
 build_memory_tree.py                /
 
 src/sigma/
-├── hotpotqa_reflections.py    # step 0: load HotpotQA, build reflection prompts/records
+├── hotpotqa_reflections.py    # step 0 (HotpotQA-only path): load HotpotQA, build reflection prompts/records
+├── reflections.py             # step 0 (generalized): same pipeline for any data_sources/ dataset
+├── data_sources/               # normalized loaders: HotpotQA, NarrativeQA, MuSiQue -> SourceExample
+│   ├── base.py                 # SourceExample schema + HF-load-with-fallback helper
+│   ├── hotpotqa.py
+│   ├── narrativeqa.py
+│   └── musique.py
 ├── reflection_dataset.py      # Q_final loading + type/level filtering, bootstrap sampling,
 │                               # answer-masked tokenization
 ├── adapters/shared_lora.py    # SharedLoRALinear: frozen shared A, trainable per-adapter B
@@ -264,9 +336,13 @@ src/sigma/
 └── utils/
     ├── context_embedding.py
     ├── metrics.py              # HotpotQA-style EM/F1
-    └── env.py                  # shared .env loading
+    ├── env.py                  # shared .env loading
+    └── logging_setup.py        # shared stdout+file logging (--log_dir) for every CLI script
 
 scripts/*.sh   # env-var-configurable wrappers around the pipeline steps
 ideas/         # the SIGMA proposal PDF this implementation follows (gitignored)
 MemoryDecoder/ # reference repo this codebase's structure/CLI style is modeled on (gitignored)
+MeMo/          # reference repo for the MEMO method SIGMA builds on (gitignored) -- not
+               # code we run directly (different infra: vLLM serving, DeepSpeed SFT,
+               # LLM-judge eval); data_sources/ is informed by its dataset conventions
 ```
