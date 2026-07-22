@@ -160,9 +160,56 @@ The reflection prompt itself (`reflections.py`) asks for the same six fields as 
 sharpened to match MEMO's actual five-stage synthesis more closely — direct vs. indirect
 facts, entity surfacing defined as "describe the entity without naming it," cross-document
 synthesis defined as combining evidence across context blocks — but still one LLM call
-per example, not MEMO's full multi-call pipeline (their fact-extraction step alone is two
-separate call-types, and their verification step is an iterative check/fix loop up to 12
-calls per QA pair — a lot more expensive than SIGMA's method needs).
+per example, not MEMO's full multi-call pipeline. For that, see the next section.
+
+### MeMo-aligned pipeline (higher fidelity, higher cost): `generate_memo_reflections.py`
+
+`reflections.py` (above) approximates MEMO's five stages in a single richer prompt.
+`generate_memo_reflections.py` instead actually **runs MEMO's real pipeline shape**,
+using their prompts verbatim (ported from `MeMo/data_synthesis_pipeline/general_prompt_utils.py`
+into `src/sigma/memo_pipeline/prompts.py`) — document-first rather than question-anchored:
+
+```bash
+python generate_memo_reflections.py --dataset hotpotqa --output data/hotpotqa_memo_reflections.jsonl --limit 50
+python generate_memo_reflections.py --dataset musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl \
+    --output data/musique_memo_reflections.jsonl --limit 50
+python generate_memo_reflections.py --dataset narrativeqa --narrativeqa_dir data/NarrativeQA \
+    --output data/narrativeqa_memo_reflections.jsonl --limit 50
+```
+
+What it actually does, per MEMO's own stage structure (`src/sigma/memo_pipeline/pipeline.py`):
+
+1. **Direct + indirect fact extraction** — one call per *document* (a context block,
+   restricted to supporting/gold paragraphs when we know which those are — HotpotQA,
+   MuSiQue — so distractor paragraphs aren't wastefully processed), independent of any
+   specific question.
+2. **Consolidation** — one call per document, combining that document's facts into
+   richer multi-fact QA pairs (only runs if a document has `--min_qa_pairs`, default 3).
+3. **Self-containment check → fix** — one call per QA pair to check it's fully
+   standalone (no pronouns, no relative dates, no "the document says..."), and if not,
+   one more call to fix it, looped up to `--max_fix_attempts` (default **2** — MEMO's own
+   default is 5; capped lower here to bound cost until you've seen real cost/quality
+   numbers).
+4. **Entity surfacing** — one call per document, using only that document's
+   self-contained QA pairs, producing "describe the entity without naming it" questions.
+5. **Cross-document synthesis** — one call per (anchor QA pair × batch of other
+   documents' QA pairs) within a question's evidence group, only for groups with
+   `--min_docs_with_qa` (default 2) qualifying documents. Skippable with `--skip_crossdoc`.
+
+Each stage's output is cached under `--cache_dir` (default `<output>_cache/`) — a rerun
+reuses whatever's already there instead of re-paying for it, unless `--overwrite_cache`.
+
+**This is meaningfully more expensive than `reflections.py`**: roughly 4-6+ LLM calls
+per *document* (not per question) versus 1 call per question, so `--limit` defaults to
+50 here (vs. 100 for `reflections.py`) and is worth keeping small until you've checked
+cost on a handful of examples. What's *not* ported from MEMO: their distributed vLLM
+serving, async "hedging" (duplicate requests racing each other for reliability against a
+flaky self-hosted server), and per-item checkpoint/resume — none of that applies when
+calling the OpenAI API directly; the per-stage caching above serves the same "don't lose
+all your progress on a crash" purpose more simply.
+
+Output is the same Q_final-compatible schema as `reflections.py` (a `rewritten_qa`
+field), so it's a drop-in `--reflections_path` for `train_bootstrap.py` either way.
 
 ## Step 1 — Bootstrap adapters
 
@@ -302,6 +349,7 @@ changes, since every backend just exposes `generate(question) -> str`.
 ```
 generate_hotpotqa_reflections.py   \
 generate_reflections.py             |
+generate_memo_reflections.py        |
 train_bootstrap.py                  |  thin root-level CLI wrappers around src/sigma/*
 run_consolidation.py                 \ (see each file's docstring for what it does)
 evaluate_sigma.py                    /
@@ -309,9 +357,14 @@ build_memory_tree.py                /
 
 src/sigma/
 ├── hotpotqa_reflections.py    # step 0 (HotpotQA-only path): load HotpotQA, build reflection prompts/records
-├── reflections.py             # step 0 (generalized): same pipeline for any data_sources/ dataset
+├── reflections.py             # step 0 (generalized, single-call-per-question): any data_sources/ dataset
+├── memo_reflections.py        # step 0 (MeMo-aligned, document-first, multi-stage): orchestrates memo_pipeline/
+├── memo_pipeline/               # MEMO's actual reflection-synthesis pipeline, ported
+│   ├── prompts.py                # MEMO's 7 prompts, near-verbatim from MeMo/data_synthesis_pipeline/
+│   ├── llm.py                    # sequential OpenAI call + MEMO's JSON-parsing logic
+│   └── pipeline.py               # document pool + all 5 stages + flatten to Q_final records
 ├── data_sources/               # normalized loaders: HotpotQA, NarrativeQA, MuSiQue -> SourceExample
-│   ├── base.py                 # SourceExample schema + HF-load-with-fallback helper
+│   ├── base.py                  # SourceExample schema
 │   ├── hotpotqa.py
 │   ├── narrativeqa.py
 │   └── musique.py
