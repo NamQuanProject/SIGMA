@@ -12,12 +12,17 @@ HotpotQA loads from Hugging Face; NarrativeQA and MuSiQue require a **local, alr
 chunked** corpus -- run ``process_narrativeqa.py``/``process_musique.py`` once first (see
 ``data_sources/narrativeqa.py``/``data_sources/musique.py``).
 
-``--mode openai`` runs the real, MEMO-aligned reflection pipeline
+``--mode openai`` and ``--mode hf`` both run the real, MEMO-aligned reflection pipeline
 (``reflection_pipeline.py``): document-first fact extraction (direct + indirect),
 consolidation, a self-containment check/fix loop, entity surfacing, and cross-document
-synthesis -- not one LLM call per question. ``--mode prompt`` is a cheap, offline
-dry-run that only exports the stage-1 (direct fact extraction) prompt per document, for
-inspecting token counts/coverage before spending real API calls.
+synthesis -- not one LLM call per question. They differ only in which client
+``reflection_pipeline.py`` is handed: ``openai`` calls the OpenAI API; ``hf`` loads a
+local, open-source instruction-tuned model (e.g. Qwen2.5-Instruct) via
+``reflection_hf_client.HFChatClient``, which exposes the same
+``chat.completions.create(...)`` shape, so the pipeline code itself doesn't change at
+all between the two. ``--mode prompt`` is a cheap, offline dry-run that only exports the
+stage-1 (direct fact extraction) prompt per document, for inspecting token
+counts/coverage before spending real compute either way.
 """
 
 from __future__ import annotations
@@ -44,6 +49,8 @@ from .reflection_pipeline import (
 from .reflection_prompts import prepare_prompt_for_direct_fact_extraction_v3
 from .utils.env import load_environment
 from .utils.logging_setup import setup_logging
+
+DEFAULT_HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
 
 
 def build_loader_kwargs(args: argparse.Namespace) -> dict[str, Any]:
@@ -154,17 +161,40 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--mode",
-        choices=("prompt", "openai"),
+        choices=("prompt", "openai", "hf"),
         default="prompt",
-        help="prompt: cheap offline stage-1-prompt export; openai: run the full pipeline for real",
+        help="prompt: cheap offline stage-1-prompt export; openai: run the full pipeline "
+        "against the OpenAI API; hf: run the full pipeline against a local, open-source "
+        "instruction-tuned model (e.g. Qwen2.5-Instruct)",
     )
-    parser.add_argument("--model", default=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"))
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="openai: chat-completions model name (default: $OPENAI_MODEL or gpt-4.1-mini). "
+        f"hf: local/HF Hub model name or path (default: {DEFAULT_HF_MODEL}).",
+    )
     parser.add_argument(
         "--max_fix_retries",
         type=int,
         default=1,
         help="Max self-containment fix attempts per QA pair (kept low: this stage is "
         "already O(#qa_pairs) LLM calls)",
+    )
+    parser.add_argument(
+        "--device", default=None, help="--mode hf only: torch device (default: cuda if available, else cpu)"
+    )
+    parser.add_argument(
+        "--dtype",
+        choices=["auto", "fp32", "fp16", "bf16"],
+        default="auto",
+        help="--mode hf only: auto = bf16 on CUDA, fp32 on CPU",
+    )
+    parser.add_argument(
+        "--max_new_tokens",
+        type=int,
+        default=4096,
+        help="--mode hf only: max tokens to generate per call (reflection prompts ask for "
+        "JSON with potentially many QA pairs, so this is generous by default)",
     )
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--log_dir", type=Path, default=Path("logs"), help="Where to write this run's log file")
@@ -181,19 +211,34 @@ def main() -> None:
         logger.info(f"Wrote stage-1 prompt records to {args.output}")
         return
 
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY is required for --mode openai")
+    if args.mode == "openai":
+        api_key = os.getenv("OPENAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("OPENAI_API_KEY is required for --mode openai")
 
-    from openai import OpenAI
+        from openai import OpenAI
 
-    client = OpenAI(api_key=api_key)
-    logger.info(f"Generating reflections for dataset={args.dataset!r} with model={args.model!r}")
+        client = OpenAI(api_key=api_key)
+        model = args.model or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+    else:  # hf
+        import torch
+
+        from .reflection_hf_client import HFChatClient
+
+        model = args.model or DEFAULT_HF_MODEL
+        device = torch.device(args.device) if args.device else None
+        if args.dtype == "auto":
+            dtype = None  # HFChatClient resolves auto (bf16 on CUDA, fp32 on CPU) itself
+        else:
+            dtype = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat16}[args.dtype]
+        client = HFChatClient(model, device=device, dtype=dtype, max_new_tokens=args.max_new_tokens)
+
+    logger.info(f"Generating reflections for dataset={args.dataset!r} with mode={args.mode!r} model={model!r}")
 
     records = run_pipeline(
         examples,
         client=client,
-        model=args.model,
+        model=model,
         dataset=args.dataset,
         max_fix_retries=args.max_fix_retries,
     )

@@ -65,10 +65,13 @@ def process(
             summary_by_doc[row["document_id"]] = row.get("summary", "")
 
     doc_ids_in_split: set[str] = set()
+    story_url_by_doc: dict[str, str] = {}
     with documents_csv.open(newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
             if split == "all" or row.get("set") == want_set:
-                doc_ids_in_split.add(row["document_id"])
+                doc_id = row["document_id"]
+                doc_ids_in_split.add(doc_id)
+                story_url_by_doc[doc_id] = row.get("story_url", "")
 
     if not doc_ids_in_split:
         raise ValueError(f"No documents found with set={want_set!r} in {documents_csv} -- check --split")
@@ -87,10 +90,11 @@ def process(
                 continue
             chunks = chunk_text(summary, chunk_size, overlap)
             chunk_docids = []
+            url = story_url_by_doc.get(doc_id, "")
             for i, chunk in enumerate(chunks):
                 chunk_docid = f"{doc_id}_chunk{i}"
                 chunk_docids.append(chunk_docid)
-                out_f.write(json.dumps({"docid": chunk_docid, "text": chunk, "url": doc_id}, ensure_ascii=False) + "\n")
+                out_f.write(json.dumps({"docid": chunk_docid, "text": chunk, "url": url}, ensure_ascii=False) + "\n")
             doc_chunk_map[doc_id] = chunk_docids
             total_chunks += len(chunks)
 

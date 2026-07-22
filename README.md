@@ -140,9 +140,23 @@ MEMO's `data_synthesis_pipeline/`) rather than one call per question:
 Documents are deduplicated by `(dataset, title)` across all loaded examples first, so a
 context block referenced by multiple questions is only processed once.
 
+**`--mode openai`** calls the OpenAI API. **`--mode hf`** runs the identical pipeline
+against a local, open-source instruction-tuned model instead (default
+`Qwen/Qwen2.5-7B-Instruct`) — no API key, no per-token cost, needs local GPU compute.
+Both modes share the exact same pipeline code (`reflection_pipeline.py`): `--mode hf`
+just hands it `reflection_hf_client.HFChatClient`, a thin wrapper around
+`transformers.AutoModelForCausalLM.generate()` that exposes the same
+`chat.completions.create(...)` shape the OpenAI client does, so nothing in the pipeline
+itself needs to know or care which one it's talking to.
+
 ```bash
-# HotpotQA
+# HotpotQA, via the OpenAI API
 python generate_reflections.py --dataset hotpotqa --mode openai \
+    --output data/hotpotqa_reflections.jsonl --limit 100
+
+# HotpotQA, via a local open-source model instead (needs a GPU + transformers)
+python generate_reflections.py --dataset hotpotqa --mode hf \
+    --model Qwen/Qwen2.5-7B-Instruct \
     --output data/hotpotqa_reflections.jsonl --limit 100
 
 # NarrativeQA (needs step 2 run first)
@@ -156,11 +170,18 @@ python generate_reflections.py --dataset musique --mode openai \
     --output data/musique_reflections.jsonl --limit 100
 ```
 
-Drop `--mode openai` (or set it to `--mode prompt`, the default) for a cheap, offline
-dry-run that only exports each document's stage-1 prompt with no LLM calls — useful for
-inspecting/debugging coverage and token counts before spending API budget; it doesn't run
-consolidation/self-containment/entity-surfacing/cross-doc, since those all depend on
-stage 1's actual output.
+`--mode hf` also accepts `--device` (default: CUDA if available, else CPU), `--dtype`
+(`auto`/`fp32`/`fp16`/`bf16`, default `auto` = bf16 on CUDA), and `--max_new_tokens`
+(default 4096 — reflection prompts ask for JSON with potentially many QA pairs, so this
+is generous). It needs an **instruction-tuned** checkpoint, not a base model — the
+reflection prompts are long, structured, multi-step instructions asking for strict JSON
+output, and only instruction-tuned models reliably follow that.
+
+Drop `--mode openai`/`--mode hf` (or set `--mode prompt`, the default) for a cheap,
+offline dry-run that only exports each document's stage-1 prompt with no LLM calls —
+useful for inspecting/debugging coverage and token counts before spending API budget or
+GPU time either way; it doesn't run consolidation/self-containment/entity-surfacing/
+cross-doc, since those all depend on stage 1's actual output.
 
 Every output record carries a `source.type` field set to the pipeline stage that produced
 it (`direct`/`indirect`/`consolidated`/`entity_surfacing`/`crossdoc`) — usable as a
@@ -364,6 +385,8 @@ src/sigma/
 ├── reflection_llm.py          # sequential OpenAI-compatible call + JSON/literal response parsing
 ├── reflection_pipeline.py     # 5-stage document-first orchestration (see "How the reflection
 │                               # pipeline maps onto MEMO's own synthesis stages" above)
+├── reflection_hf_client.py    # --mode hf: local open-source model, same chat.completions
+│                               # .create(...) shape as the OpenAI client
 ├── data_sources/               # normalized loaders: HotpotQA, NarrativeQA, MuSiQue -> SourceExample
 │   ├── base.py                  # SourceExample schema
 │   ├── chunking.py               # MEMO's chunk_text word-count sliding-window algorithm
