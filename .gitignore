@@ -10,3 +10,12 @@ logs/
 __pycache__/
 *.py[cod]
 MeMO/
+data/
+
+# Raw downloaded dataset content -- see data/NarrativeQA/README.md and
+# data/MuSiQue/README.md for what goes here and how to get it. Keep the READMEs
+# themselves tracked so the folders' purpose is documented in the repo.
+data/NarrativeQA/*
+!data/NarrativeQA/README.md
+data/MuSiQue/*
+!data/MuSiQue/README.md
