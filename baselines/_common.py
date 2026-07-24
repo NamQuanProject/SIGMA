@@ -23,14 +23,14 @@ def add_dataset_args(parser: argparse.ArgumentParser) -> None:
         "--corpus_path",
         type=Path,
         required=True,
-        help="Chunked corpus JSONL (sigma-process-narrativeqa/sigma-process-musique output). "
+        help="Chunked corpus JSONL (python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique output). "
         "Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
         required=True,
-        help="Chunked questions JSONL (sigma-process-narrativeqa/sigma-process-musique output). "
+        help="Chunked questions JSONL (python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique output). "
         "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(

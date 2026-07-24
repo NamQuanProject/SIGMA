@@ -50,9 +50,9 @@ def load_examples(
     for path, flag in ((corpus_path, "--corpus_path"), (qns_path, "--qns_path")):
         if not path.is_file():
             raise FileNotFoundError(
-                f"Missing {path} ({flag}) -- run sigma-process-musique first (the mandatory "
+                f"Missing {path} ({flag}) -- run python -m sigma.data_process.process_musique first (the mandatory "
                 f"chunking stage, mirroring MEMO's own data_processing_utils step): "
-                f"sigma-process-musique --musique_path <your raw file> --output_dir <chunks dir>"
+                f"python -m sigma.data_process.process_musique --musique_path <your raw file> --output_dir <chunks dir>"
             )
 
     rows = _load_questions_with_evidence_docs(qns_path, limit=limit)

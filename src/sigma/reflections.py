@@ -5,7 +5,7 @@ shape -- so the output JSONL schema, and everything downstream that consumes it
 identical regardless of which source dataset a given reflections file came from.
 
 Both datasets need a **local, already chunked** corpus -- run
-``sigma-process-narrativeqa``/``sigma-process-musique`` once first (see
+``python -m sigma.data_process.process_narrativeqa``/``python -m sigma.data_process.process_musique`` once first (see
 ``data_sources/narrativeqa.py``/``data_sources/musique.py``, and ``data_process/`` for
 the raw -> chunks conversion itself).
 
@@ -112,14 +112,14 @@ def main() -> None:
         "--corpus_path",
         type=Path,
         required=True,
-        help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        help="Chunked corpus JSONL (produced by python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique). "
         "Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
         required=True,
-        help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        help="Chunked questions JSONL (produced by python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique). "
         "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(

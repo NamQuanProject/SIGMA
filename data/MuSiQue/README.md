@@ -30,7 +30,7 @@ project's own `data/MuSiQue/musique.json` actually came from.)
 From the repo root (after `pip install -e .` — see the repo-root README):
 
 ```bash
-sigma-process-musique \
+python -m sigma.data_process.process_musique \
     --musique_path data/MuSiQue/musique.json \
     --output_dir data/MuSiQue
 ```
@@ -53,7 +53,7 @@ split `musique.json`'s 1,000 records yourself before running this step.
 `data_synthesis_pipeline/musique_data_utils.py` convention), e.g.:
 
 ```bash
-sigma-reflections --dataset musique --mode openai \
+python -m sigma.reflections --dataset musique --mode openai \
     --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
     --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
     --output data/musique_reflections.jsonl --limit 100

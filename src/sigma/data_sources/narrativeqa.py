@@ -52,9 +52,9 @@ def load_examples(
     for path, flag in ((corpus_path, "--corpus_path"), (qns_path, "--qns_path")):
         if not path.is_file():
             raise FileNotFoundError(
-                f"Missing {path} ({flag}) -- run sigma-process-narrativeqa first (the "
+                f"Missing {path} ({flag}) -- run python -m sigma.data_process.process_narrativeqa first (the "
                 f"mandatory chunking stage, mirroring MEMO's own data_processing_utils "
-                f"step): sigma-process-narrativeqa --narrativeqa_dir <raw NarrativeQA "
+                f"step): python -m sigma.data_process.process_narrativeqa --narrativeqa_dir <raw NarrativeQA "
                 f"checkout> --split <split> --output_dir <chunks dir>"
             )
 

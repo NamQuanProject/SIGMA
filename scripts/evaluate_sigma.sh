@@ -11,7 +11,7 @@ MODEL=${MODEL:-Qwen/Qwen2.5-0.5B}
 DATASET=${DATASET:-musique}
 LIMIT=${LIMIT:-200}
 
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_entry_path "${MEMORY_ENTRY}" \
     --model_name_or_path "${MODEL}" \
     --dataset "${DATASET}" \

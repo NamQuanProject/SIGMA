@@ -10,8 +10,8 @@ set -euo pipefail
 # DATASET is narrativeqa or musique -- both need CORPUS_PATH + QNS_PATH, two explicit
 # file paths matching MEMO's own --corpus_path/--qns_path convention exactly (not a
 # directory with an implied filename). Both must already contain the chunked
-# corpus/questions JSONL produced by sigma-process-narrativeqa / sigma-process-musique --
-# run those first.
+# corpus/questions JSONL produced by python -m sigma.data_process.process_narrativeqa
+# or python -m sigma.data_process.process_musique -- run those first.
 # MODE=prompt (default) just exports stage-1 prompts, no LLM calls; MODE=openai runs the
 # full MEMO-aligned pipeline against the OpenAI API; MODE=hf runs it against a local,
 # open-source instruction-tuned model instead (MODEL default: Qwen/Qwen2.5-7B-Instruct).
@@ -37,7 +37,7 @@ if [ "${MODE}" = "hf" ]; then
     EXTRA_ARGS+=(--dtype "${DTYPE}")
 fi
 
-sigma-reflections \
+python -m sigma.reflections \
     --dataset "${DATASET}" \
     --mode "${MODE}" \
     --output "${OUTPUT}" \

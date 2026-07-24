@@ -13,7 +13,7 @@ SPLIT=${SPLIT:-train}
 CHUNK_SIZE=${CHUNK_SIZE:-6400}
 OVERLAP=${OVERLAP:-640}
 
-sigma-process-narrativeqa \
+python -m sigma.data_process.process_narrativeqa \
     --narrativeqa_dir "${NARRATIVEQA_DIR}" \
     --split "${SPLIT}" \
     --chunk_size "${CHUNK_SIZE}" \

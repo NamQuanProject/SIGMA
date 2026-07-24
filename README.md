@@ -21,33 +21,33 @@ MuSiQue's raw data is a single downloaded file, so it's the fastest way to see t
 pipeline run once. Swap in NarrativeQA later using the [full steps](#1-install) below.
 
 ```bash
-# 0. Install (also registers the sigma-* commands used below)
+# 0. Install
 pip install -e .
 echo "OPENAI_API_KEY=sk-..." > .env    # needed for step 2
 
 # 1. Download musique.json into data/MuSiQue/ -- see step 2 below for the link, then:
-sigma-process-musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
+python -m sigma.data_process.process_musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
 
 # 2. Generate training QA pairs (small run: 100 examples)
-sigma-reflections --dataset musique --mode openai \
+python -m sigma.reflections --dataset musique --mode openai \
     --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
     --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
     --output data/musique_reflections.jsonl --limit 100
 
 # 3. Train 8 small LoRA adapters on that data
-sigma-bootstrap \
+python -m sigma.train_bootstrap \
     --reflections_path data/musique_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap --num_adapters 8 --lora_rank 8
 
 # 4. Compress those adapters into one memory file
-sigma-consolidate \
+python -m sigma.run_consolidation \
     --bootstrap_dir runs/bootstrap \
     --reflections_path data/musique_reflections.jsonl \
     --output_path runs/memory_entry.pt
 
 # 5. Evaluate: SIGMA-adapted backbone vs. the plain backbone, scored with EM/F1
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B --dataset musique \
     --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
@@ -89,11 +89,10 @@ pip install -e .
 ```
 
 This is the only install step — `pyproject.toml` pulls in every dependency
-(`torch`/`transformers`/`accelerate`/`datasets`/`openai`/`loguru`/...) and registers the
-`sigma-*` commands used throughout this README (`sigma-reflections`, `sigma-bootstrap`,
-`sigma-consolidate`, `sigma-evaluate`, `sigma-build-tree`, `sigma-process-narrativeqa`,
-`sigma-process-musique`), so they work from any directory without needing `PYTHONPATH`
-tricks or root-level wrapper scripts.
+(`torch`/`transformers`/`accelerate`/`datasets`/`openai`/`loguru`/...) and installs
+`sigma` itself in editable mode, so every command in this README (always run as
+`python -m sigma.<module>`, e.g. `python -m sigma.reflections`) works from any directory
+without needing `PYTHONPATH` tricks.
 
 Training/consolidating/evaluating (steps 5–7) need a real GPU to run at a useful scale
 — everything *works* on CPU too, just slowly, which is fine for a small smoke test.
@@ -137,11 +136,11 @@ writes them in the format step 4 expects. Both converters live in `data_process/
 
 ```bash
 # MuSiQue
-sigma-process-musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
+python -m sigma.data_process.process_musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
 
 # NarrativeQA (once per split you plan to use)
-sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split train
-sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split valid
+python -m sigma.data_process.process_narrativeqa --narrativeqa_dir data/NarrativeQA --split train
+python -m sigma.data_process.process_narrativeqa --narrativeqa_dir data/NarrativeQA --split valid
 ```
 
 If you skip this, step 4's loaders will fail with a clear error telling you exactly
@@ -171,13 +170,13 @@ it" and cross-document questions. Details are in
 
 ```bash
 # MuSiQue (needs step 3 run first)
-sigma-reflections --dataset musique --mode openai \
+python -m sigma.reflections --dataset musique --mode openai \
     --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
     --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
     --output data/musique_reflections.jsonl --limit 100
 
 # NarrativeQA (needs step 3 run first)
-sigma-reflections --dataset narrativeqa --mode openai \
+python -m sigma.reflections --dataset narrativeqa --mode openai \
     --corpus_path data/NarrativeQA/narrativeqa_train_corpus_chunks.jsonl \
     --qns_path data/NarrativeQA/narrativeqa_train_questions_chunks.jsonl \
     --output data/narrativeqa_reflections.jsonl --limit 100
@@ -211,7 +210,7 @@ Trains several small LoRA adapters on randomly-resampled subsets of the QA pairs
 step 4:
 
 ```bash
-sigma-bootstrap \
+python -m sigma.train_bootstrap \
     --reflections_path data/musique_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap \
@@ -230,7 +229,7 @@ against a local model — there's no API-only version of this step.
 Compresses the adapters from step 5 into one compact memory file:
 
 ```bash
-sigma-consolidate \
+python -m sigma.run_consolidation \
     --bootstrap_dir runs/bootstrap \
     --reflections_path data/musique_reflections.jsonl \
     --output_path runs/memory_entry.pt
@@ -245,7 +244,7 @@ on held-out questions, scored with exact-match (EM) and F1:
 
 ```bash
 # MuSiQue -- see the note below before running this one
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_entry_path runs/musique/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --dataset musique \
@@ -253,7 +252,7 @@ sigma-evaluate \
     --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl --limit 200
 
 # NarrativeQA
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_entry_path runs/narrativeqa/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --dataset narrativeqa \
@@ -265,14 +264,14 @@ sigma-evaluate \
 own convention) let you point evaluation at a *different* chunked file than the one you
 trained on. This matters most for MuSiQue: this project's own `musique.json` (see step
 2) is a single fixed ~1,000-question subset, not a pre-split train/dev pair, so
-`sigma-process-musique` always writes the same filenames into whatever `--output_dir`
+`python -m sigma.data_process.process_musique` always writes the same filenames into whatever `--output_dir`
 you give it. For a genuine held-out evaluation, get a separate train/dev pair from the
 official StonyBrookNLP repo (see `data/MuSiQue/README.md`) and run step 3 **twice** —
 once per file, into two different directories:
 
 ```bash
-sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
-sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
+python -m sigma.data_process.process_musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
+python -m sigma.data_process.process_musique --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
 # ... then use data/MuSiQue/train's files for step 4 and data/MuSiQue/dev's for step 7
 ```
 
@@ -291,12 +290,12 @@ Once you have two or more memory files (e.g. one per dataset), organize them int
 tree and route between them automatically instead of picking one manually:
 
 ```bash
-sigma-build-tree \
+python -m sigma.build_memory_tree \
     --task musique=runs/musique/memory_entry.pt \
     --task narrativeqa=runs/narrativeqa/memory_entry.pt \
     --output_path runs/memory_tree.pt
 
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_tree_path runs/memory_tree.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --dataset musique \
@@ -315,7 +314,7 @@ Evaluation can pull in a third set of predictions purely as a comparison point (
 5–6 still need a local model, but step 7 can compare against an API model too):
 
 ```bash
-sigma-evaluate \
+python -m sigma.evaluate_sigma \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --dataset musique \

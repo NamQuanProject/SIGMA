@@ -6,7 +6,7 @@ REFLECTIONS=${REFLECTIONS:-data/musique_reflections.jsonl}
 OUTPUT_PATH=${OUTPUT_PATH:-runs/memory_entry.pt}
 METHOD=${METHOD:-pca}
 
-sigma-consolidate \
+python -m sigma.run_consolidation \
     --bootstrap_dir "${BOOTSTRAP_DIR}" \
     --reflections_path "${REFLECTIONS}" \
     --output_path "${OUTPUT_PATH}" \

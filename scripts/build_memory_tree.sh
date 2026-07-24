@@ -14,6 +14,6 @@ for task in ${TASKS}; do
     TASK_ARGS+=(--task "${task}")
 done
 
-sigma-build-tree \
+python -m sigma.build_memory_tree \
     "${TASK_ARGS[@]}" \
     --output_path "${OUTPUT_PATH}"

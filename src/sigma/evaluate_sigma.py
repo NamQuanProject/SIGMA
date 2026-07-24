@@ -61,14 +61,14 @@ def parse_args() -> argparse.Namespace:
         "--corpus_path",
         type=Path,
         required=True,
-        help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique, "
+        help="Chunked corpus JSONL (produced by python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique, "
         "pointed at a held-out file -- see the README). Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
         required=True,
-        help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        help="Chunked questions JSONL (produced by python -m sigma.data_process.process_narrativeqa or python -m sigma.data_process.process_musique). "
         "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(
