@@ -19,8 +19,8 @@ from datasets import load_dataset
 from loguru import logger
 from tqdm import tqdm
 
-from .utils.env import load_environment
-from .utils.logging_setup import setup_logging
+from ..utils.env import load_environment
+from ..utils.logging_setup import setup_logging
 
 
 DEFAULT_DATASET_NAME = "hotpotqa/hotpot_qa"

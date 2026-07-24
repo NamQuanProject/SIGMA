@@ -1,4 +1,4 @@
-"""LLM calling helpers for the MEMO-aligned reflection pipeline (``reflection_pipeline.py``).
+"""LLM calling helpers for the MEMO-aligned reflection pipeline (``pipeline.py``).
 
 Ported from the deleted ``memo_pipeline/llm.py``. MEMO itself serves its prompts through
 vLLM with async "hedging" (racing duplicate requests and keeping whichever returns

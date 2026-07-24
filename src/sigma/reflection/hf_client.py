@@ -3,7 +3,7 @@
 
 Exposes the exact same ``client.chat.completions.create(model=, messages=, temperature=)
 -> response.choices[0].message.content`` shape as the ``openai`` package's client, so
-``reflection_llm.call_llm_json`` and every stage in ``reflection_pipeline.py`` work
+``llm.call_llm_json`` and every stage in ``pipeline.py`` work
 completely unchanged regardless of which one they're handed -- pass an ``HFChatClient``
 instance wherever the OpenAI client would otherwise go.
 
@@ -53,7 +53,7 @@ class _Chat:
 
 class HFChatClient:
     """Drop-in, local-model stand-in for ``openai.OpenAI``. Loads one model once and
-    reuses it for every call ``reflection_pipeline.py`` makes during a run (sequential,
+    reuses it for every call ``pipeline.py`` makes during a run (sequential,
     same as the OpenAI backend -- no batching).
     """
 

@@ -1,11 +1,11 @@
 """Generate QA reflections from any of the supported source datasets (HotpotQA,
 NarrativeQA, MuSiQue -- ``data_sources/LOADERS``).
 
-This generalizes ``hotpotqa_reflections.py`` (kept as-is, unchanged, since
+This generalizes ``reflection/hotpotqa_legacy.py`` (kept as-is, unchanged, since
 ``evaluate_sigma.py`` still uses its ``load_hotpotqa_examples`` for the HotpotQA-only
 eval path) to any dataset in ``data_sources/``, all normalized to the same
 ``SourceExample`` shape -- so the output JSONL schema, and everything downstream that
-consumes it (``reflection_dataset.py``, ``train_bootstrap.py``, ``run_consolidation.py``),
+consumes it (``reflection/dataset.py``, ``train_bootstrap.py``, ``run_consolidation.py``),
 is identical regardless of which source dataset a given reflections file came from.
 
 HotpotQA loads from Hugging Face; NarrativeQA and MuSiQue require a **local, already
@@ -13,12 +13,12 @@ chunked** corpus -- run ``process_narrativeqa.py``/``process_musique.py`` once f
 ``data_sources/narrativeqa.py``/``data_sources/musique.py``).
 
 ``--mode openai`` and ``--mode hf`` both run the real, MEMO-aligned reflection pipeline
-(``reflection_pipeline.py``): document-first fact extraction (direct + indirect),
+(``reflection/pipeline.py``): document-first fact extraction (direct + indirect),
 consolidation, a self-containment check/fix loop, entity surfacing, and cross-document
 synthesis -- not one LLM call per question. They differ only in which client
-``reflection_pipeline.py`` is handed: ``openai`` calls the OpenAI API; ``hf`` loads a
+``reflection/pipeline.py`` is handed: ``openai`` calls the OpenAI API; ``hf`` loads a
 local, open-source instruction-tuned model (e.g. Qwen2.5-Instruct) via
-``reflection_hf_client.HFChatClient``, which exposes the same
+``reflection.hf_client.HFChatClient``, which exposes the same
 ``chat.completions.create(...)`` shape, so the pipeline code itself doesn't change at
 all between the two. ``--mode prompt`` is a cheap, offline dry-run that only exports the
 stage-1 (direct fact extraction) prompt per document, for inspecting token
@@ -36,8 +36,8 @@ from loguru import logger
 from tqdm import tqdm
 
 from .data_sources import LOADERS, SourceExample, build_loader_kwargs
-from .hotpotqa_reflections import write_jsonl
-from .reflection_pipeline import (
+from .reflection.hotpotqa_legacy import write_jsonl
+from .reflection.pipeline import (
     build_documents,
     flatten_to_records,
     run_consolidation,
@@ -46,7 +46,7 @@ from .reflection_pipeline import (
     run_fact_extraction,
     run_self_containment,
 )
-from .reflection_prompts import prepare_prompt_for_direct_fact_extraction_v3
+from .reflection.prompts import prepare_prompt_for_direct_fact_extraction_v3
 from .utils.env import load_environment
 from .utils.logging_setup import setup_logging
 
@@ -112,21 +112,27 @@ def main() -> None:
         "--config", default=None, help="HF dataset config, e.g. distractor/fullwiki (--dataset hotpotqa only)"
     )
     parser.add_argument(
-        "--narrativeqa_dir",
+        "--corpus_path",
         type=Path,
         default=None,
-        help="Directory containing narrativeqa_<split>_corpus_chunks.jsonl / "
-        "_questions_chunks.jsonl (produced by process_narrativeqa.py). Required for "
-        "--dataset narrativeqa.",
+        help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        "Required for --dataset narrativeqa/musique -- matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
-        "--musique_dir",
+        "--qns_path",
         type=Path,
         default=None,
-        help="Directory containing musique_corpus_chunks.jsonl / musique_questions_chunks.jsonl "
-        "(produced by process_musique.py). Required for --dataset musique.",
+        help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        "Required for --dataset narrativeqa/musique -- matches MEMO's own --qns_path convention.",
     )
-    parser.add_argument("--limit", type=int, default=100, help="Maximum number of examples to process")
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="Maximum number of examples to process. For hotpotqa, a random --seed'd sample; for "
+        "narrativeqa/musique, the first N in file order (matching MEMO's own loaders, which have "
+        "no shuffling) -- for narrativeqa this counts unique source documents, not questions.",
+    )
     parser.add_argument(
         "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
     )
@@ -195,7 +201,7 @@ def main() -> None:
     else:  # hf
         import torch
 
-        from .reflection_hf_client import HFChatClient
+        from .reflection.hf_client import HFChatClient
 
         model = args.model or DEFAULT_HF_MODEL
         device = torch.device(args.device) if args.device else None

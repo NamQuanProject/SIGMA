@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING
 import torch
 from tqdm.auto import tqdm
 
-from ..reflection_dataset import IGNORE_INDEX, QAExample, build_prompt
+from ..reflection.dataset import IGNORE_INDEX, QAExample, build_prompt
 
 if TYPE_CHECKING:
     from ..adapters.shared_lora import SharedLoRALinear

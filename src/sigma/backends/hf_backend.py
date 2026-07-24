@@ -12,7 +12,7 @@ from __future__ import annotations
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
-from ..reflection_dataset import build_prompt
+from ..reflection.dataset import build_prompt
 
 
 class HFAnswerBackend:
@@ -38,7 +38,14 @@ class HFAnswerBackend:
         self.model.eval()
 
     def generate(self, question: str) -> str:
-        prompt = build_prompt(question)
+        return self.generate_raw(build_prompt(question))
+
+    def generate_raw(self, prompt: str) -> str:
+        """Generate from ``prompt`` verbatim, skipping the question-only ``build_prompt``
+        wrap -- used by ``baselines/`` scripts, whose prompts already embed retrieved
+        context alongside the question.
+        """
+
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.device)
         with torch.inference_mode():
             output_ids = self.model.generate(

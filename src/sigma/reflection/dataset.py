@@ -1,6 +1,6 @@
 """Build the reflection QA training set (Q_final) from generated HotpotQA reflections.
 
-Loads a JSONL of reflection records (as produced by ``hotpotqa_reflections.py`` in
+Loads a JSONL of reflection records (as produced by ``hotpotqa_legacy.py`` in
 ``--mode openai``), extracts (question, answer) pairs, and tokenizes them with the loss
 masked to answer tokens only (eq. 15 in the SIGMA proposal).
 """

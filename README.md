@@ -22,28 +22,28 @@ HotpotQA needs no download step, so it's the fastest way to see the whole pipeli
 once. Swap in NarrativeQA/MuSiQue later using the [full steps](#1-install) below.
 
 ```bash
-# 0. Install
-pip install -r requirements.txt
+# 0. Install (also registers the sigma-* commands used below)
+pip install -e .
 echo "OPENAI_API_KEY=sk-..." > .env    # needed for step 2
 
 # 1. Generate training QA pairs from HotpotQA (small run: 100 examples)
-python generate_reflections.py --dataset hotpotqa --mode openai \
+sigma-reflections --dataset hotpotqa --mode openai \
     --output data/hotpotqa_reflections.jsonl --limit 100
 
 # 2. Train 8 small LoRA adapters on that data
-python train_bootstrap.py \
+sigma-bootstrap \
     --reflections_path data/hotpotqa_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap --num_adapters 8 --lora_rank 8
 
 # 3. Compress those adapters into one memory file
-python run_consolidation.py \
+sigma-consolidate \
     --bootstrap_dir runs/bootstrap \
     --reflections_path data/hotpotqa_reflections.jsonl \
     --output_path runs/memory_entry.pt
 
 # 4. Evaluate: SIGMA-adapted backbone vs. the plain backbone, scored with EM/F1
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
 ```
@@ -71,21 +71,28 @@ NarrativeQA/MuSiQue, which need one extra data-prep step first.
 7. [7. Evaluate](#7-evaluate)
 8. [8. (Optional) Combine multiple datasets into one memory tree](#8-optional-combine-multiple-datasets-into-one-memory-tree)
 9. [9. (Optional) Compare against another model](#9-optional-compare-against-another-model)
-10. [How it works](#how-it-works)
-11. [Repo layout](#repo-layout)
+10. [10. (Optional) Compare against non-SIGMA baselines](#10-optional-compare-against-non-sigma-baselines)
+11. [How it works](#how-it-works)
+12. [Repo layout](#repo-layout)
 
 ## 1. Install
 
 ```bash
-pip install -r requirements.txt
+pip install -e .
 ```
 
-Training/consolidating/evaluating (steps 5–7) need `torch` + `transformers` +
-`accelerate` and a real GPU to run at a useful scale — everything *works* on CPU too,
-just slowly, which is fine for a small smoke test.
+This is the only install step — `pyproject.toml` pulls in every dependency
+(`torch`/`transformers`/`accelerate`/`datasets`/`openai`/`loguru`/...) and registers the
+`sigma-*` commands used throughout this README (`sigma-reflections`, `sigma-bootstrap`,
+`sigma-consolidate`, `sigma-evaluate`, `sigma-build-tree`, `sigma-process-narrativeqa`,
+`sigma-process-musique`), so they work from any directory without needing `PYTHONPATH`
+tricks or root-level wrapper scripts.
+
+Training/consolidating/evaluating (steps 5–7) need a real GPU to run at a useful scale
+— everything *works* on CPU too, just slowly, which is fine for a small smoke test.
 
 Put your OpenAI key in a `.env` file at the repo root (needed for step 4, and
-optionally step 9):
+optionally step 9/10):
 
 ```
 OPENAI_API_KEY=sk-...
@@ -123,11 +130,11 @@ in the format step 4 expects:
 
 ```bash
 # NarrativeQA (once per split you plan to use)
-python process_narrativeqa.py --narrativeqa_dir data/NarrativeQA --split train
-python process_narrativeqa.py --narrativeqa_dir data/NarrativeQA --split valid
+sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split train
+sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split valid
 
 # MuSiQue
-python process_musique.py \
+sigma-process-musique \
     --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl \
     --output_dir data/MuSiQue
 ```
@@ -159,19 +166,28 @@ it" and cross-document questions. Details are in
 
 ```bash
 # HotpotQA
-python generate_reflections.py --dataset hotpotqa --mode openai \
+sigma-reflections --dataset hotpotqa --mode openai \
     --output data/hotpotqa_reflections.jsonl --limit 100
 
 # NarrativeQA (needs step 3 run first)
-python generate_reflections.py --dataset narrativeqa --mode openai \
-    --narrativeqa_dir data/NarrativeQA --split train \
+sigma-reflections --dataset narrativeqa --mode openai \
+    --corpus_path data/NarrativeQA/narrativeqa_train_corpus_chunks.jsonl \
+    --qns_path data/NarrativeQA/narrativeqa_train_questions_chunks.jsonl \
     --output data/narrativeqa_reflections.jsonl --limit 100
 
 # MuSiQue (needs step 3 run first)
-python generate_reflections.py --dataset musique --mode openai \
-    --musique_dir data/MuSiQue \
+sigma-reflections --dataset musique --mode openai \
+    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
     --output data/musique_reflections.jsonl --limit 100
 ```
+
+`--corpus_path`/`--qns_path` are two explicit file paths, matching MEMO's own
+`data_synthesis_pipeline/*_datasynth_pipeline.sh` scripts exactly (they take the same
+two flags) — not a directory with an implied filename. `--limit` also matches MEMO's own
+loaders here: it keeps the first N **in file order**, not a random sample (for
+NarrativeQA this counts unique source documents, since MEMO's own `nqa_data_utils.py`
+subsets by document, not by question).
 
 **Cost/speed note:** this makes several LLM calls per document (not per question), and
 they run one at a time. A `--limit` of 100 questions can mean several minutes and a
@@ -194,7 +210,7 @@ Trains several small LoRA adapters on randomly-resampled subsets of the QA pairs
 step 4:
 
 ```bash
-python train_bootstrap.py \
+sigma-bootstrap \
     --reflections_path data/hotpotqa_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap \
@@ -213,7 +229,7 @@ against a local model — there's no API-only version of this step.
 Compresses the adapters from step 5 into one compact memory file:
 
 ```bash
-python run_consolidation.py \
+sigma-consolidate \
     --bootstrap_dir runs/bootstrap \
     --reflections_path data/hotpotqa_reflections.jsonl \
     --output_path runs/memory_entry.pt
@@ -228,36 +244,42 @@ on held-out questions, scored with exact-match (EM) and F1:
 
 ```bash
 # HotpotQA (default)
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
 
 # NarrativeQA
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_entry_path runs/narrativeqa/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
-    --dataset narrativeqa --narrativeqa_dir data/NarrativeQA --split validation --limit 200
+    --dataset narrativeqa \
+    --corpus_path data/NarrativeQA/narrativeqa_valid_corpus_chunks.jsonl \
+    --qns_path data/NarrativeQA/narrativeqa_valid_questions_chunks.jsonl --limit 200
 
 # MuSiQue -- see the note below before running this one
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_entry_path runs/musique/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
-    --dataset musique --musique_dir data/MuSiQue/dev --limit 200
+    --dataset musique \
+    --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl --limit 200
 ```
 
-**MuSiQue-specific note:** unlike the other two datasets, MuSiQue has no `--split`
-flag — `process_musique.py` (step 3) always writes the same filenames into whatever
+`--corpus_path`/`--qns_path` (same two explicit file paths as step 4, matching MEMO's
+own convention) let you point evaluation at a *different* chunked file than the one you
+trained on -- important for MuSiQue specifically, which has no `--split` flag:
+`sigma-process-musique` (step 3) always writes the same filenames into whatever
 `--output_dir` you give it. So to evaluate on data the model wasn't trained on, run
 step 3 **twice** — once for your train file, once for a dev/held-out file — into two
-different directories, and point `--musique_dir` at the dev one here:
+different directories, and point `--corpus_path`/`--qns_path` at the dev one here:
 
 ```bash
-python process_musique.py --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
-python process_musique.py --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
-# ... then use data/MuSiQue/train for step 4 and data/MuSiQue/dev for step 7
+sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
+sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
+# ... then use data/MuSiQue/train's files for step 4 and data/MuSiQue/dev's for step 7
 ```
 
-Pointing step 4 and step 7 at the same MuSiQue directory trains and evaluates on the
+Pointing step 4 and step 7 at the same MuSiQue files trains and evaluates on the
 same questions, which will look better than it is.
 
 This is single-shot evaluation — one question in, one answer out. MEMO's own evaluation
@@ -272,13 +294,13 @@ Once you have two or more memory files (e.g. one per dataset), organize them int
 tree and route between them automatically instead of picking one manually:
 
 ```bash
-python build_memory_tree.py \
+sigma-build-tree \
     --task hotpotqa=runs/hotpotqa/memory_entry.pt \
     --task musique=runs/musique/memory_entry.pt \
     --task narrativeqa=runs/narrativeqa/memory_entry.pt \
     --output_path runs/memory_tree.pt
 
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_tree_path runs/memory_tree.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
 ```
@@ -294,7 +316,7 @@ Evaluation can pull in a third set of predictions purely as a comparison point (
 5–6 still need a local model, but step 7 can compare against an API model too):
 
 ```bash
-python evaluate_sigma.py \
+sigma-evaluate \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --baseline_model openai:gpt-4o-mini --limit 200
@@ -303,6 +325,29 @@ python evaluate_sigma.py \
 `--baseline_model` takes `openai:<model>` (needs `OPENAI_API_KEY`) or a local Hugging
 Face path/repo id. It's comparison-only — the memory itself never attaches to it.
 
+## 10. (Optional) Compare against non-SIGMA baselines
+
+`baselines/` has two standalone scripts for comparing SIGMA against retrieval-based
+approaches instead of a bare backbone — an oracle-context in-context-learning baseline
+and a BM25 retrieval baseline, both scored with the same EM/F1 metric and readable on
+the same held-out examples (matching `--dataset`/`--corpus_path`/`--qns_path`/`--limit`):
+
+```bash
+python -m baselines.icl.run_icl_baseline \
+    --dataset musique --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl \
+    --model openai:gpt-4o-mini --limit 100
+
+python -m baselines.bm25.run_bm25_baseline \
+    --dataset musique --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl \
+    --model openai:gpt-4o-mini --top_k 3 --limit 100
+```
+
+See `baselines/README.md` for what each one does, how it maps to
+[MeMo's own baselines](MeMo/baselines), and why the heavier ones (cartridges, HippoRAG2,
+NV-Embed) aren't ported.
+
 ---
 
 ## How it works
@@ -310,12 +355,12 @@ Face path/repo id. It's comparison-only — the memory itself never attaches to 
 <details>
 <summary id="how-the-reflection-pipeline-works">How the reflection pipeline (step 4) works, and how closely it follows MEMO (click to expand)</summary>
 
-`reflection_prompts.py` carries MEMO's own prompts near-verbatim (direct/indirect fact
+`reflection/prompts.py` carries MEMO's own prompts near-verbatim (direct/indirect fact
 extraction, consolidation, self-containment check/fix, entity surfacing, cross-document
-combination). `reflection_llm.py` calls an OpenAI-compatible client one request at a
+combination). `reflection/llm.py` calls an OpenAI-compatible client one request at a
 time with retries and parses JSON out of the reply — MEMO itself serves these through
 vLLM with async "hedging" (racing duplicate requests), which this doesn't replicate.
-`reflection_pipeline.py` runs the five stages **document-first**: `build_documents`
+`reflection/pipeline.py` runs the five stages **document-first**: `build_documents`
 dedups every context block across all loaded questions by `(dataset, title)` first, so
 each stage runs once per unique document, not once per question. Cross-document
 synthesis only combines documents that actually co-occurred as context for the same
@@ -324,7 +369,7 @@ batched call per group rather than the full pairwise cross product, to keep cost
 rather than quadratic.
 
 `flatten_to_records` converts the result into the same `source`/`rewritten_qa` record
-shape `reflection_dataset.py` expects, tagged with a `source.type` field
+shape `reflection/dataset.py` expects, tagged with a `source.type` field
 (`direct`/`indirect`/`consolidated`/`entity_surfacing`/`crossdoc`) recording which stage
 produced it.
 
@@ -363,33 +408,44 @@ mirroring MEMO's own `data_processing_utils/convert_*_to_chunks_jsonl.py`), then
 from the resulting chunked JSONL (`data_sources/narrativeqa.py`,
 `data_sources/musique.py`) instead of `datasets.load_dataset`. `process_musique.py`
 accepts either the official one-JSON-object-per-line format or a single JSON
-array/object, auto-detected. A missing `--narrativeqa_dir`/`--musique_dir`, or a
-directory missing the chunked files step 3 produces, raises a clear error naming the
-exact command to run.
+array/object, auto-detected. A missing `--corpus_path`/`--qns_path`, or a file missing
+the chunked content step 3 produces, raises a clear error naming the exact command to
+run.
+
+**Loading convention matches MEMO exactly, not just the chunk file schema:**
+`data_sources/musique.py`/`narrativeqa.py` take `--corpus_path`/`--qns_path` as two
+explicit file paths (not a directory with an implied filename) and load them the same
+way MEMO's own `data_synthesis_pipeline/musique_data_utils.py`/`nqa_data_utils.py` do --
+`--limit` keeps the first N **in file order** (no shuffling, matching MEMO's loaders
+exactly), and the corpus is filtered down to only chunks actually referenced by the
+loaded questions' evidence/gold docs before anything else happens. The one MEMO behavior
+intentionally *not* ported is `nqa_data_utils.py`'s `SUBSET_MAP` -- three named subset
+sizes (10/5_1/5_2 documents) selected via a hardcoded doc-ID list tied to MEMO's own
+specific corpus build, which isn't reproducible without their exact chunk IDs; every
+`--limit` here uses the general "first N unique source documents in file order" rule
+instead.
 
 </details>
 
 ## Repo layout
 
 ```
-generate_hotpotqa_reflections.py   \
-generate_reflections.py             |
-process_narrativeqa.py               |  thin root-level CLI wrappers around src/sigma/*
-process_musique.py                   |  (see each file's docstring for what it does)
-train_bootstrap.py                   |
-run_consolidation.py                 |
-evaluate_sigma.py                    |
-build_memory_tree.py                /
+pyproject.toml   # packaging: deps + the sigma-* console scripts used throughout this README
 
 src/sigma/
-├── hotpotqa_reflections.py    # legacy HotpotQA-only single-call script (kept for its loader + --mode prompt)
 ├── reflections.py             # step 4: reflection generation CLI, any data_sources/ dataset
-├── reflection_prompts.py      # MEMO's own prompts, ported near-verbatim
-├── reflection_llm.py          # sequential OpenAI-compatible call + JSON/literal response parsing
-├── reflection_pipeline.py     # 5-stage document-first orchestration (see "How the reflection
-│                               # pipeline works" above)
-├── reflection_hf_client.py    # --mode hf: local open-source model, same chat.completions
-│                               # .create(...) shape as the OpenAI client
+├── reflection/                  # supporting modules for step 4 (grouped like adapters/,
+│                                 # consolidate/, memory/ below)
+│   ├── prompts.py                 # MEMO's own prompts, ported near-verbatim
+│   ├── llm.py                     # sequential OpenAI-compatible call + JSON/literal response parsing
+│   ├── pipeline.py                 # 5-stage document-first orchestration (see "How the
+│   │                                # reflection pipeline works" above)
+│   ├── hf_client.py                # --mode hf: local open-source model, same chat.completions
+│   │                                # .create(...) shape as the OpenAI client
+│   ├── dataset.py                  # Q_final loading + type/level filtering, bootstrap sampling,
+│   │                                # answer-masked tokenization
+│   └── hotpotqa_legacy.py          # legacy single-call HotpotQA loader (kept for its
+│                                    # load_hotpotqa_examples, reused by data_sources/hotpotqa.py)
 ├── data_sources/               # normalized loaders: HotpotQA, NarrativeQA, MuSiQue -> SourceExample
 │   ├── base.py                  # SourceExample schema
 │   ├── chunking.py               # MEMO's chunk_text word-count sliding-window algorithm
@@ -398,8 +454,6 @@ src/sigma/
 │   ├── hotpotqa.py
 │   ├── narrativeqa.py            # reads process_narrativeqa.py's output (required)
 │   └── musique.py                # reads process_musique.py's output (required)
-├── reflection_dataset.py      # Q_final loading + type/level filtering, bootstrap sampling,
-│                               # answer-masked tokenization
 ├── adapters/shared_lora.py    # SharedLoRALinear: frozen shared A, trainable per-adapter B
 ├── train_bootstrap.py         # step 5
 ├── consolidate/
@@ -415,21 +469,28 @@ src/sigma/
 │   └── single_entry.py          # single-task stand-in exposing the same route() shape as MemoryTree
 ├── evaluate_sigma.py          # step 7 / step 8 (single entry or tree)
 ├── build_memory_tree.py       # step 8: build+save a MemoryTree from N MemoryEntry files
-├── backends/                  # pluggable comparison backends (local HF model, OpenAI, ...) -- step 9
+├── backends/                  # pluggable comparison backends (local HF model, OpenAI, ...) --
+│                               # step 9, and reused by baselines/ (step 10)
 └── utils/
     ├── context_embedding.py
     ├── metrics.py              # EM/F1
     ├── env.py                  # shared .env loading
     └── logging_setup.py        # shared stdout+file logging (--log_dir) for every CLI script
 
+baselines/       # step 10: non-SIGMA comparison baselines (oracle ICL, BM25) -- see baselines/README.md
+├── _common.py     # shared dataset-args/example-loading/prompt-rendering, reusing data_sources/
+├── icl/run_icl_baseline.py
+└── bm25/{bm25_utils.py, run_bm25_baseline.py}
+
 data/
 ├── NarrativeQA/README.md      # download instructions (see step 2) -- contents gitignored
 └── MuSiQue/README.md          # download instructions (see step 2) -- contents gitignored
 
-scripts/*.sh   # env-var-configurable wrappers around the pipeline steps
+scripts/*.sh   # env-var-configurable wrappers around the sigma-* commands above
 ideas/         # the SIGMA proposal PDF this implementation follows (gitignored)
 MemoryDecoder/ # reference repo this codebase's structure/CLI style is modeled on (gitignored)
 MeMo/          # reference repo for the MEMO method SIGMA builds on (gitignored) -- not
                # code we run directly (different infra: vLLM serving, DeepSpeed SFT,
-               # LLM-judge eval); data_sources/ is informed by its dataset conventions
+               # LLM-judge eval); data_sources/ and baselines/ are informed by its
+               # dataset/baseline conventions
 ```

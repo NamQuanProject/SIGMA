@@ -19,7 +19,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .adapters.shared_lora import attach_shared_lora, collect_B_matrices, reset_all_B, trainable_parameters
-from .reflection_dataset import AnswerMaskedDataset, bootstrap_subsets, collate_answer_masked, load_qa_examples
+from .reflection.dataset import AnswerMaskedDataset, bootstrap_subsets, collate_answer_masked, load_qa_examples
 from .utils.logging_setup import setup_logging
 
 DEFAULT_TARGET_MODULES = (r"q_proj$", r"v_proj$")
@@ -142,7 +142,7 @@ def main() -> None:
         raise ValueError(
             f"No examples left after filtering (question_type={args.question_type!r}, level={args.level!r}) -- "
             "check the reflections file actually has that metadata (regenerate with the updated "
-            "hotpotqa_reflections.py if it predates type/level support)"
+            "reflection/hotpotqa_legacy.py if it predates type/level support)"
         )
     logger.info(f"Loaded {len(examples)} QA examples")
 

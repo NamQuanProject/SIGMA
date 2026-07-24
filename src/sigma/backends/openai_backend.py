@@ -46,9 +46,17 @@ class OpenAIAnswerBackend:
         self.system_prompt = system_prompt
 
     def generate(self, question: str) -> str:
+        return self.generate_raw(question)
+
+    def generate_raw(self, prompt: str) -> str:
+        """Generate from ``prompt`` verbatim -- an alias of ``generate`` here since this
+        backend never wraps its input, kept for symmetry with ``HFAnswerBackend``'s
+        ``generate_raw`` so ``baselines/`` scripts can call either backend the same way.
+        """
+
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": question},
+            {"role": "user", "content": prompt},
         ]
         last_error: Exception | None = None
         for attempt in range(self.max_retries):

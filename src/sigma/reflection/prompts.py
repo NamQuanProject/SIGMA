@@ -4,7 +4,7 @@ release). Wording/structure is preserved as closely as possible -- these are the
 prompts MEMO uses for fact extraction, consolidation, self-containment
 verification/repair, entity surfacing, and cross-document synthesis. Only the calling
 convention around them (how they're invoked, retried, and orchestrated) differs -- see
-``reflection_pipeline.py`` and ``reflection_llm.py`` for that.
+``pipeline.py`` and ``llm.py`` for that.
 """
 
 from __future__ import annotations

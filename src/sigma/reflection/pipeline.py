@@ -1,8 +1,8 @@
 """MEMO-aligned, document-first reflection synthesis pipeline.
 
-Ported from the deleted ``memo_pipeline/pipeline.py`` as sibling modules directly under
-``src/sigma`` (no subpackage), and wired into ``reflections.py``'s ``--mode openai`` path
-so it's the actual reflection generator this project ships, not a side experiment.
+Ported from the deleted ``memo_pipeline/pipeline.py``, and wired into
+``reflections.py``'s ``--mode openai`` path so it's the actual reflection generator this
+project ships, not a side experiment.
 
 MEMO's own pipeline works **document-first**: it extracts facts from each document once
 (not once per question), consolidates/verifies/self-contains them, then optionally
@@ -27,7 +27,7 @@ example. This mirrors that shape:
                                 cross product -- see its docstring for why).
 
 ``flatten_to_records`` converts the resulting per-document QA pairs into the same
-``source``/``rewritten_qa`` record schema ``reflection_dataset.py`` already expects, so
+``source``/``rewritten_qa`` record schema ``dataset.py`` already expects, so
 nothing downstream (``train_bootstrap.py``, ``run_consolidation.py``) needs to change.
 """
 
@@ -39,9 +39,9 @@ from typing import Any, Iterable
 from loguru import logger
 from tqdm import tqdm
 
-from .data_sources.base import SourceExample
-from .reflection_llm import call_llm_json
-from .reflection_prompts import (
+from ..data_sources.base import SourceExample
+from .llm import call_llm_json
+from .prompts import (
     extract_doc_metadata,
     prepare_prompt_for_consolidation,
     prepare_prompt_for_crossdoc_anchor_combination,

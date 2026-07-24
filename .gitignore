@@ -9,7 +9,8 @@ logs/
 **/__pycache__/
 __pycache__/
 *.py[cod]
-MeMO/
+*.egg-info/
+MeMo/
 
 # Raw downloaded dataset content -- see data/NarrativeQA/README.md and
 # data/MuSiQue/README.md for what goes here and how to get it. Keep the READMEs

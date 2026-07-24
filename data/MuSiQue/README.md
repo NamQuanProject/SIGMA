@@ -32,28 +32,39 @@ one-object-per-line.
 
 ## 2. Process into chunks
 
-From the repo root, once per file you have (e.g. once for train, once for dev — see
-below for why that matters):
+From the repo root (after `pip install -e .` — see the repo-root README), once per file
+you have (e.g. once for train, once for dev — see below for why that matters):
 
 ```bash
-python process_musique.py \
+sigma-process-musique \
     --musique_path data/MuSiQue/<your_downloaded_file>.json \
     --output_dir data/MuSiQue
 ```
 
 This writes `musique_corpus_chunks.jsonl` and `musique_questions_chunks.jsonl` into
-`--output_dir` — the format `src/sigma/data_sources/musique.py` actually reads.
+`--output_dir`.
 
 **If you plan to both train and evaluate on MuSiQue**, run this step twice into two
 *different* output directories, once per raw file (e.g. train and dev):
 
 ```bash
-python process_musique.py --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
-python process_musique.py --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
+sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
+sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   --output_dir data/MuSiQue/dev
 ```
 
 There's no `--split` flag anywhere in this pipeline for MuSiQue — the raw file you feed
-`process_musique.py` *is* the split. Pointing both training and evaluation at the same
+`sigma-process-musique` *is* the split. Pointing both training and evaluation at the same
 processed directory means testing on the exact same questions you trained on.
+
+`src/sigma/data_sources/musique.py` reads the two chunked files directly via
+`--corpus_path`/`--qns_path` (two explicit file paths, matching MEMO's own
+`data_synthesis_pipeline/musique_data_utils.py` convention), e.g.:
+
+```bash
+sigma-reflections --dataset musique --mode openai \
+    --corpus_path data/MuSiQue/train/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/train/musique_questions_chunks.jsonl \
+    --output data/musique_reflections.jsonl --limit 100
+```
 
 See the repo-root `README.md` for the full pipeline this feeds into.

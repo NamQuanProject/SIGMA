@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sigma"
+version = "0.1.0"
+description = "Bootstrap-and-consolidate memory for frozen LLMs (SIGMA)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "datasets>=3.0.0",
+    "tqdm>=4.66.0",
+    "openai>=1.40.0",
+    "python-dotenv>=1.0.1",
+    "torch>=2.2.0",
+    "transformers>=4.45.0",
+    "accelerate>=0.30.0",
+    "loguru>=0.7.0",
+]
+
+# One console script per pipeline stage -- run `pip install -e .` once, then these work
+# from any directory without the sys.path hacks the old root-level wrapper scripts
+# needed. Names match the step numbers in README.md.
+[project.scripts]
+sigma-process-narrativeqa = "sigma.data_sources.process_narrativeqa:main"
+sigma-process-musique = "sigma.data_sources.process_musique:main"
+sigma-reflections = "sigma.reflections:main"
+sigma-bootstrap = "sigma.train_bootstrap:main"
+sigma-consolidate = "sigma.run_consolidation:main"
+sigma-evaluate = "sigma.evaluate_sigma:main"
+sigma-build-tree = "sigma.build_memory_tree:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -13,7 +13,7 @@ OUTPUT_DIR=${OUTPUT_DIR:-data/MuSiQue}
 CHUNK_SIZE=${CHUNK_SIZE:-6400}
 OVERLAP=${OVERLAP:-640}
 
-python process_musique.py \
+sigma-process-musique \
     --musique_path "${MUSIQUE_PATH}" \
     --output_dir "${OUTPUT_DIR}" \
     --chunk_size "${CHUNK_SIZE}" \

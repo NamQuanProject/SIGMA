@@ -2,14 +2,16 @@
 set -euo pipefail
 
 # Example:
-#   DATASET=musique MUSIQUE_DIR=data/MuSiQue \
+#   DATASET=musique CORPUS_PATH=data/MuSiQue/musique_corpus_chunks.jsonl \
+#   QNS_PATH=data/MuSiQue/musique_questions_chunks.jsonl \
 #   OUTPUT=data/musique_reflections.jsonl LIMIT=100 \
 #   bash scripts/generate_reflections.sh
 #
-# DATASET=narrativeqa uses NARRATIVEQA_DIR (default data/NarrativeQA).
-# DATASET=musique uses MUSIQUE_DIR (default data/MuSiQue).
-# Both must already contain the chunked corpus/questions JSONL produced by
-# process_narrativeqa.py / process_musique.py -- run those first.
+# DATASET=narrativeqa/musique both need CORPUS_PATH + QNS_PATH -- two explicit file
+# paths, matching MEMO's own --corpus_path/--qns_path convention exactly (not a
+# directory with an implied filename). Both must already contain the chunked
+# corpus/questions JSONL produced by sigma-process-narrativeqa / sigma-process-musique --
+# run those first.
 # DATASET=hotpotqa needs neither -- it loads straight from Hugging Face.
 # MODE=prompt (default) just exports stage-1 prompts, no LLM calls; MODE=openai runs the
 # full MEMO-aligned pipeline against the OpenAI API; MODE=hf runs it against a local,
@@ -24,10 +26,9 @@ LIMIT=${LIMIT:-100}
 DTYPE=${DTYPE:-auto}
 
 EXTRA_ARGS=()
-if [ "${DATASET}" = "narrativeqa" ]; then
-    EXTRA_ARGS+=(--narrativeqa_dir "${NARRATIVEQA_DIR:-data/NarrativeQA}")
-elif [ "${DATASET}" = "musique" ]; then
-    EXTRA_ARGS+=(--musique_dir "${MUSIQUE_DIR:-data/MuSiQue}")
+if [ "${DATASET}" = "narrativeqa" ] || [ "${DATASET}" = "musique" ]; then
+    EXTRA_ARGS+=(--corpus_path "${CORPUS_PATH:?Set CORPUS_PATH to the chunked corpus JSONL}")
+    EXTRA_ARGS+=(--qns_path "${QNS_PATH:?Set QNS_PATH to the chunked questions JSONL}")
 fi
 
 if [ -n "${MODEL:-}" ]; then
@@ -38,7 +39,7 @@ if [ "${MODE}" = "hf" ]; then
     EXTRA_ARGS+=(--dtype "${DTYPE}")
 fi
 
-python generate_reflections.py \
+sigma-reflections \
     --dataset "${DATASET}" \
     --mode "${MODE}" \
     --output "${OUTPUT}" \

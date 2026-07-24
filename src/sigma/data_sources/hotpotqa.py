@@ -1,4 +1,4 @@
-"""HotpotQA source adapter -- thin wrapper over ``hotpotqa_reflections.py``'s existing,
+"""HotpotQA source adapter -- thin wrapper over ``reflection/hotpotqa_legacy.py``'s existing,
 already-working loader (including its HF-repo-migration fallback), just normalized to
 the shared ``SourceExample`` schema every source in this package exposes.
 """
@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Iterator
 
-from ..hotpotqa_reflections import load_hotpotqa_examples
+from ..reflection.hotpotqa_legacy import load_hotpotqa_examples
 from .base import SourceExample
 
 DATASET_LABEL = "hotpotqa"

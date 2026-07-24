@@ -20,7 +20,7 @@ from .consolidate.generator import CoordinateGenerator, train_generator
 from .consolidate.pca import compute_diagonal_fisher, consolidate_cloud, fisher_weighted_consolidate
 from .memory.entry import CoordinateLayout, MemoryEntry
 from .memory.signature import fit_signature
-from .reflection_dataset import build_prompt, bootstrap_subsets, load_qa_examples
+from .reflection.dataset import build_prompt, bootstrap_subsets, load_qa_examples
 from .utils.context_embedding import compute_context_embedding
 from .utils.logging_setup import setup_logging
 

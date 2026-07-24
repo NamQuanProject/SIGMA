@@ -7,7 +7,7 @@ OUTPUT_DIR=${OUTPUT_DIR:-runs/bootstrap}
 NUM_ADAPTERS=${NUM_ADAPTERS:-8}
 LORA_RANK=${LORA_RANK:-8}
 
-python train_bootstrap.py \
+sigma-bootstrap \
     --reflections_path "${REFLECTIONS}" \
     --model_name_or_path "${MODEL}" \
     --output_dir "${OUTPUT_DIR}" \

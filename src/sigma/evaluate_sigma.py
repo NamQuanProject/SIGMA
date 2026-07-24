@@ -37,7 +37,7 @@ from .memory.apply import apply_adapter, apply_entry, attach_memory, attach_memo
 from .memory.entry import MemoryEntry
 from .memory.single_entry import SingleEntryMemory
 from .memory.tree import MemoryTree
-from .reflection_dataset import build_prompt
+from .reflection.dataset import build_prompt
 from .utils.context_embedding import compute_context_embedding
 from .utils.env import load_environment
 from .utils.logging_setup import setup_logging
@@ -64,21 +64,27 @@ def parse_args() -> argparse.Namespace:
         "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
     )
     parser.add_argument(
-        "--narrativeqa_dir",
+        "--corpus_path",
         type=Path,
         default=None,
-        help="Directory containing narrativeqa_<split>_corpus_chunks.jsonl / _questions_chunks.jsonl "
-        "(produced by process_narrativeqa.py). Required for --dataset narrativeqa.",
+        help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique, "
+        "pointed at a held-out file -- see the README). Required for --dataset narrativeqa/musique -- "
+        "matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
-        "--musique_dir",
+        "--qns_path",
         type=Path,
         default=None,
-        help="Directory containing musique_corpus_chunks.jsonl / musique_questions_chunks.jsonl "
-        "(produced by process_musique.py, pointed at a held-out MuSiQue file -- see the README). "
-        "Required for --dataset musique.",
+        help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
+        "Required for --dataset narrativeqa/musique -- matches MEMO's own --qns_path convention.",
     )
-    parser.add_argument("--limit", type=int, default=100)
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=100,
+        help="For narrativeqa/musique this is the first N in file order (matching MEMO's own "
+        "loaders), not a random sample -- for narrativeqa it counts unique source documents.",
+    )
     parser.add_argument("--max_new_tokens", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=1, help="alpha ensembling samples, eq. 24")
     parser.add_argument("--seed", type=int, default=42)
