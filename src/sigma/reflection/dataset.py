@@ -1,8 +1,8 @@
-"""Build the reflection QA training set (Q_final) from generated HotpotQA reflections.
+"""Build the reflection QA training set (Q_final) from generated reflections.
 
-Loads a JSONL of reflection records (as produced by ``hotpotqa_legacy.py`` in
-``--mode openai``), extracts (question, answer) pairs, and tokenizes them with the loss
-masked to answer tokens only (eq. 15 in the SIGMA proposal).
+Loads a JSONL of reflection records (as produced by ``reflections.py`` in ``--mode
+openai``/``--mode hf``), extracts (question, answer) pairs, and tokenizes them with the
+loss masked to answer tokens only (eq. 15 in the SIGMA proposal).
 """
 
 from __future__ import annotations
@@ -23,11 +23,12 @@ IGNORE_INDEX = -100
 class QAExample:
     """One (question, answer) pair drawn from Q_final.
 
-    ``question_type``/``level`` are HotpotQA's own metadata (bridge vs. comparison
-    questions; easy/medium/hard), carried through from the reflection record if present
-    (older reflection files predate this and will just have ``None`` here). They exist
-    solely so ``load_qa_examples`` can filter into pseudo-tasks for exercising a
-    ``MemoryTree`` from HotpotQA alone -- see ``train_bootstrap.py --question_type``.
+    ``question_type``/``level`` are the source dataset's own metadata (e.g. MuSiQue's
+    hop count: '2hop'/'3hop'/'4hop'), carried through from the reflection record if
+    present (older reflection files, or datasets that don't populate one, will just have
+    ``None`` here). They exist solely so ``load_qa_examples`` can filter into
+    pseudo-tasks for exercising a ``MemoryTree`` from a single dataset alone -- see
+    ``train_bootstrap.py --question_type``.
     """
 
     example_id: str

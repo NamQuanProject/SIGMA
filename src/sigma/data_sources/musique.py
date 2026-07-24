@@ -1,6 +1,6 @@
 """MuSiQue source adapter.
 
-Reads the **chunked corpus/questions JSONL** produced by ``process_musique.py`` -- this
+Reads the **chunked corpus/questions JSONL** produced by ``data_process/process_musique.py`` -- this
 is the mandatory first stage, mirroring MEMO's own two-stage pipeline
 (``data_processing_utils`` -> ``data_synthesis_pipeline``). Run that script once before
 calling ``load_examples`` here; a missing file raises a clear error telling you to run it.
@@ -21,7 +21,7 @@ docs get kept) is the thing this project is trying to match exactly:
   ``evidence_docs``/``gold_docs`` (``load_only_query_related_docs_musique``), rather than
   holding every chunk in the file in memory.
 
-See ``process_musique.py`` for where the raw data comes from and what it does (chunks
+See ``data_process/process_musique.py`` for where the raw data comes from and what it does (chunks
 each paragraph, following MEMO's own ``convert_musique_to_chunks_jsonl.py`` algorithm).
 """
 
@@ -114,8 +114,7 @@ def _normalize_row(row: dict[str, Any], corpus: dict[str, str]) -> SourceExample
 
     # Context includes both supporting *and* negative (distractor) chunks -- this is
     # what gives reflection/pipeline.py's supporting-facts filtering (based on
-    # supporting_facts below) something real to filter, matching the same
-    # supporting/distractor distinction HotpotQA's context already has.
+    # supporting_facts below) something real to filter.
     context = [{"title": docid, "sentences": [corpus[docid]]} for docid in evidence_docids + negative_docids]
     supporting_facts = [{"title": docid, "sent_id": 0} for docid in evidence_docids]
 

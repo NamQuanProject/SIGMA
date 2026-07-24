@@ -23,8 +23,8 @@ dependencies = [
 # from any directory without the sys.path hacks the old root-level wrapper scripts
 # needed. Names match the step numbers in README.md.
 [project.scripts]
-sigma-process-narrativeqa = "sigma.data_sources.process_narrativeqa:main"
-sigma-process-musique = "sigma.data_sources.process_musique:main"
+sigma-process-narrativeqa = "sigma.data_process.process_narrativeqa:main"
+sigma-process-musique = "sigma.data_process.process_musique:main"
 sigma-reflections = "sigma.reflections:main"
 sigma-bootstrap = "sigma.train_bootstrap:main"
 sigma-consolidate = "sigma.run_consolidation:main"

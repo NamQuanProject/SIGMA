@@ -3,8 +3,8 @@ baselines/bm25.
 
 Reuses ``sigma.data_sources.LOADERS``/``build_loader_kwargs`` -- the same dispatch
 ``evaluate_sigma.py`` uses -- so a baseline run and a SIGMA run drawn with the same
-``--dataset``/``--split``/``--limit``/``--seed`` see the *same* held-out examples and are
-directly comparable.
+``--dataset``/``--corpus_path``/``--qns_path``/``--limit`` see the *same* held-out
+examples and are directly comparable.
 """
 
 from __future__ import annotations
@@ -18,39 +18,28 @@ __all__ = ["add_dataset_args", "load_examples", "render_context", "build_answer_
 
 
 def add_dataset_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), default="hotpotqa")
-    parser.add_argument("--split", type=str, default="validation")
-    parser.add_argument(
-        "--dataset_name", type=str, default=None, help="Override the HF dataset repo id (--dataset hotpotqa only)"
-    )
-    parser.add_argument(
-        "--config", type=str, default=None, help="HF dataset config, e.g. distractor/fullwiki (--dataset hotpotqa only)"
-    )
-    parser.add_argument(
-        "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
-    )
+    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), required=True)
     parser.add_argument(
         "--corpus_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked corpus JSONL (sigma-process-narrativeqa/sigma-process-musique output). "
-        "Required for --dataset narrativeqa/musique -- matches MEMO's own --corpus_path convention.",
+        "Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked questions JSONL (sigma-process-narrativeqa/sigma-process-musique output). "
-        "Required for --dataset narrativeqa/musique -- matches MEMO's own --qns_path convention.",
+        "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=100,
-        help="For narrativeqa/musique this is the first N in file order (matching MEMO), not a "
-        "random sample -- for narrativeqa it counts unique source documents.",
+        help="The first N in file order (matching MEMO), not a random sample -- for "
+        "narrativeqa this counts unique source documents.",
     )
-    parser.add_argument("--seed", type=int, default=42)
 
 
 def load_examples(args: argparse.Namespace) -> list[SourceExample]:

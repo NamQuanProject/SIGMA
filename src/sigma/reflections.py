@@ -1,16 +1,13 @@
-"""Generate QA reflections from any of the supported source datasets (HotpotQA,
-NarrativeQA, MuSiQue -- ``data_sources/LOADERS``).
+"""Generate QA reflections from any of the supported source datasets (NarrativeQA,
+MuSiQue -- ``data_sources/LOADERS``), all normalized to the same ``SourceExample``
+shape -- so the output JSONL schema, and everything downstream that consumes it
+(``reflection/dataset.py``, ``train_bootstrap.py``, ``run_consolidation.py``), is
+identical regardless of which source dataset a given reflections file came from.
 
-This generalizes ``reflection/hotpotqa_legacy.py`` (kept as-is, unchanged, since
-``evaluate_sigma.py`` still uses its ``load_hotpotqa_examples`` for the HotpotQA-only
-eval path) to any dataset in ``data_sources/``, all normalized to the same
-``SourceExample`` shape -- so the output JSONL schema, and everything downstream that
-consumes it (``reflection/dataset.py``, ``train_bootstrap.py``, ``run_consolidation.py``),
-is identical regardless of which source dataset a given reflections file came from.
-
-HotpotQA loads from Hugging Face; NarrativeQA and MuSiQue require a **local, already
-chunked** corpus -- run ``process_narrativeqa.py``/``process_musique.py`` once first (see
-``data_sources/narrativeqa.py``/``data_sources/musique.py``).
+Both datasets need a **local, already chunked** corpus -- run
+``sigma-process-narrativeqa``/``sigma-process-musique`` once first (see
+``data_sources/narrativeqa.py``/``data_sources/musique.py``, and ``data_process/`` for
+the raw -> chunks conversion itself).
 
 ``--mode openai`` and ``--mode hf`` both run the real, MEMO-aligned reflection pipeline
 (``reflection/pipeline.py``): document-first fact extraction (direct + indirect),
@@ -28,6 +25,7 @@ counts/coverage before spending real compute either way.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from pathlib import Path
 from typing import Any, Iterator
@@ -36,7 +34,6 @@ from loguru import logger
 from tqdm import tqdm
 
 from .data_sources import LOADERS, SourceExample, build_loader_kwargs
-from .reflection.hotpotqa_legacy import write_jsonl
 from .reflection.pipeline import (
     build_documents,
     flatten_to_records,
@@ -51,6 +48,13 @@ from .utils.env import load_environment
 from .utils.logging_setup import setup_logging
 
 DEFAULT_HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
+
+
+def write_jsonl(records: Iterator[dict[str, Any]], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as handle:
+        for record in records:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 def export_stage1_prompts(examples: Iterator[SourceExample]) -> Iterator[dict[str, Any]]:
@@ -101,42 +105,31 @@ def main() -> None:
     load_environment()
 
     parser = argparse.ArgumentParser(
-        description="Generate QA reflections from a source dataset (HotpotQA, NarrativeQA, MuSiQue)."
+        description="Generate QA reflections from a source dataset (NarrativeQA, MuSiQue)."
     )
-    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), default="hotpotqa")
-    parser.add_argument("--split", default="train")
-    parser.add_argument(
-        "--dataset_name", default=None, help="Override the HF dataset repo id for the chosen --dataset"
-    )
-    parser.add_argument(
-        "--config", default=None, help="HF dataset config, e.g. distractor/fullwiki (--dataset hotpotqa only)"
-    )
+    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), required=True)
     parser.add_argument(
         "--corpus_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
-        "Required for --dataset narrativeqa/musique -- matches MEMO's own --corpus_path convention.",
+        "Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
-        "Required for --dataset narrativeqa/musique -- matches MEMO's own --qns_path convention.",
+        "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=100,
-        help="Maximum number of examples to process. For hotpotqa, a random --seed'd sample; for "
-        "narrativeqa/musique, the first N in file order (matching MEMO's own loaders, which have "
-        "no shuffling) -- for narrativeqa this counts unique source documents, not questions.",
+        help="Maximum number of examples to process: the first N in file order (matching MEMO's "
+        "own loaders, which have no shuffling) -- for narrativeqa this counts unique source "
+        "documents, not questions.",
     )
-    parser.add_argument(
-        "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
-    )
-    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--mode",
         choices=("prompt", "openai", "hf"),

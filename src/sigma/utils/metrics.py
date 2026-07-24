@@ -1,5 +1,6 @@
-"""HotpotQA-style exact-match / F1 scoring, following the standard normalization rules
-used by the official HotpotQA and SQuAD evaluation scripts.
+"""Exact-match / F1 scoring, following the standard normalization rules used by the
+official HotpotQA and SQuAD evaluation scripts (the algorithm itself is dataset-agnostic
+and applies equally to NarrativeQA/MuSiQue).
 """
 
 from __future__ import annotations

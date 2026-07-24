@@ -1,4 +1,4 @@
-"""Shared normalized schema for reflection data sources (HotpotQA, NarrativeQA, MuSiQue)."""
+"""Shared normalized schema for reflection data sources (NarrativeQA, MuSiQue)."""
 
 from __future__ import annotations
 
@@ -10,11 +10,11 @@ from typing import Any
 class SourceExample:
     """A normalized multi-hop / long-document QA example, dataset-agnostic.
 
-    ``context`` is a list of ``{"title": str, "sentences": list[str]}`` blocks -- the
-    same shape HotpotQA already used, general enough for MuSiQue's paragraphs and a
-    single-block NarrativeQA summary. Downstream code (``reflections.py``'s prompt
-    builder, and everything in ``reflection/dataset.py``/``train_bootstrap.py``) only
-    ever sees this shape, never a dataset's raw schema.
+    ``context`` is a list of ``{"title": str, "sentences": list[str]}`` blocks --
+    general enough for MuSiQue's paragraphs and a single-block NarrativeQA summary.
+    Downstream code (``reflections.py``'s prompt builder, and everything in
+    ``reflection/dataset.py``/``train_bootstrap.py``) only ever sees this shape, never a
+    dataset's raw schema.
     """
 
     dataset: str

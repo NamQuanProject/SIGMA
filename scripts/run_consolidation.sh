@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BOOTSTRAP_DIR=${BOOTSTRAP_DIR:-runs/bootstrap}
-REFLECTIONS=${REFLECTIONS:-data/hotpotqa_reflections.jsonl}
+REFLECTIONS=${REFLECTIONS:-data/musique_reflections.jsonl}
 OUTPUT_PATH=${OUTPUT_PATH:-runs/memory_entry.pt}
 METHOD=${METHOD:-pca}
 

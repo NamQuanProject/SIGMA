@@ -1,8 +1,8 @@
 """Oracle-context in-context-learning baseline.
 
 Dumps *every* context block a question has (SourceExample.context -- MuSiQue's
-evidence + distractor paragraphs, HotpotQA's 10 distractor-setting paragraphs, or
-NarrativeQA's summary) directly into the prompt, then answers -- no retrieval, no
+evidence + distractor paragraphs, or NarrativeQA's summary) directly into the prompt,
+then answers -- no retrieval, no
 memory, no adapter. This is the SIGMA-scale analogue of MeMo/baselines/icl's oracle
 in-context baseline: an upper bound on what "just paste all the context in" gets you,
 without MEMO's vLLM serving stack.

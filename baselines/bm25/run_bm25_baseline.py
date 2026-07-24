@@ -1,8 +1,8 @@
 """BM25 retrieval baseline.
 
 Ranks each question's own candidate context blocks (SourceExample.context -- MuSiQue's
-evidence + distractor paragraphs, HotpotQA's 10 distractor-setting paragraphs, or
-NarrativeQA's summary) by BM25 against the question, keeps the top ``--top_k``, and
+evidence + distractor paragraphs, or NarrativeQA's summary) by BM25 against the
+question, keeps the top ``--top_k``, and
 answers from only those. This is the SIGMA-scale analogue of MeMo/baselines/bm25
 (retrieve, then answer) -- ranking within each question's own candidate pool rather than
 a corpus-wide index, without MEMO's Pyserini/Elasticsearch stack.

@@ -32,14 +32,16 @@ def parse_args() -> argparse.Namespace:
         "--question_type",
         type=str,
         default=None,
-        help="Keep only examples with this HotpotQA question type ('bridge'/'comparison'), "
-        "to build one task of a multi-task MemoryTree from a single reflections file",
+        help="Keep only examples with this dataset-provided type metadata (e.g. MuSiQue's hop "
+        "count: '2hop'/'3hop'/'4hop'), to build one task of a multi-task MemoryTree from a "
+        "single reflections file",
     )
     parser.add_argument(
         "--level",
         type=str,
         default=None,
-        help="Keep only examples with this HotpotQA difficulty level ('easy'/'medium'/'hard')",
+        help="Keep only examples with this dataset-provided difficulty/level metadata, if the "
+        "source dataset populates one",
     )
     parser.add_argument("--model_name_or_path", type=str, required=True)
     parser.add_argument("--output_dir", type=Path, required=True)
@@ -141,8 +143,7 @@ def main() -> None:
     if not examples:
         raise ValueError(
             f"No examples left after filtering (question_type={args.question_type!r}, level={args.level!r}) -- "
-            "check the reflections file actually has that metadata (regenerate with the updated "
-            "reflection/hotpotqa_legacy.py if it predates type/level support)"
+            "check the reflections file actually has that metadata"
         )
     logger.info(f"Loaded {len(examples)} QA examples")
 

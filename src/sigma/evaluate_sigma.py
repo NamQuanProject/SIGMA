@@ -1,6 +1,6 @@
 """Evaluate a SIGMA memory against the unmodified backbone on any of the supported
-source datasets (HotpotQA, NarrativeQA, MuSiQue -- ``data_sources/LOADERS``, the same
-loaders ``reflections.py`` uses to generate the reflections a memory was trained on).
+source datasets (NarrativeQA, MuSiQue -- ``data_sources/LOADERS``, the same loaders
+``reflections.py`` uses to generate the reflections a memory was trained on).
 
 Works with either a single-task ``MemoryEntry`` (``--memory_entry_path``) or a
 multi-task ``MemoryTree`` (``--memory_tree_path``, see ``build_memory_tree.py``) --
@@ -48,7 +48,7 @@ DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat1
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Evaluate a SIGMA memory on a source dataset (HotpotQA, NarrativeQA, MuSiQue)."
+        description="Evaluate a SIGMA memory on a source dataset (NarrativeQA, MuSiQue)."
     )
     memory_group = parser.add_mutually_exclusive_group(required=True)
     memory_group.add_argument("--memory_entry_path", type=Path, default=None, help="A single-task MemoryEntry")
@@ -56,38 +56,30 @@ def parse_args() -> argparse.Namespace:
         "--memory_tree_path", type=Path, default=None, help="A multi-task MemoryTree (build_memory_tree.py)"
     )
     parser.add_argument("--model_name_or_path", type=str, required=True)
-    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), default="hotpotqa")
-    parser.add_argument("--split", type=str, default="validation")
-    parser.add_argument("--dataset_name", type=str, default=None, help="Override the HF dataset repo id (--dataset hotpotqa only)")
-    parser.add_argument("--config", type=str, default=None, help="HF dataset config, e.g. distractor/fullwiki (--dataset hotpotqa only)")
-    parser.add_argument(
-        "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
-    )
+    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), required=True)
     parser.add_argument(
         "--corpus_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked corpus JSONL (produced by sigma-process-narrativeqa/sigma-process-musique, "
-        "pointed at a held-out file -- see the README). Required for --dataset narrativeqa/musique -- "
-        "matches MEMO's own --corpus_path convention.",
+        "pointed at a held-out file -- see the README). Matches MEMO's own --corpus_path convention.",
     )
     parser.add_argument(
         "--qns_path",
         type=Path,
-        default=None,
+        required=True,
         help="Chunked questions JSONL (produced by sigma-process-narrativeqa/sigma-process-musique). "
-        "Required for --dataset narrativeqa/musique -- matches MEMO's own --qns_path convention.",
+        "Matches MEMO's own --qns_path convention.",
     )
     parser.add_argument(
         "--limit",
         type=int,
         default=100,
-        help="For narrativeqa/musique this is the first N in file order (matching MEMO's own "
-        "loaders), not a random sample -- for narrativeqa it counts unique source documents.",
+        help="The first N in file order (matching MEMO's own loaders), not a random sample -- "
+        "for narrativeqa this counts unique source documents.",
     )
     parser.add_argument("--max_new_tokens", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=1, help="alpha ensembling samples, eq. 24")
-    parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
         "--dtype",
         choices=["auto", "fp32", "fp16", "bf16"],
@@ -217,8 +209,8 @@ def main() -> None:
         if external_backend is not None:
             external_predictions.append(external_backend.generate(example.question))
 
-        # model.generate() in a tight loop with variable-length prompts (every HotpotQA
-        # question is a different length) is a known way to fragment PyTorch's CUDA
+        # model.generate() in a tight loop with variable-length prompts (every question
+        # is a different length) is a known way to fragment PyTorch's CUDA
         # caching allocator, causing generation to gradually get slower over hundreds of
         # calls -- periodically releasing cached (but unused) blocks keeps that in check.
         if args.empty_cache_every and torch.cuda.is_available() and (i + 1) % args.empty_cache_every == 0:

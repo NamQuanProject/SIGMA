@@ -68,7 +68,9 @@ def process(
     if not musique_path.is_file():
         raise FileNotFoundError(
             f"{musique_path} not found -- --musique_path must point at a local MuSiQue "
-            "JSON/JSONL file (see https://github.com/StonyBrookNLP/musique for the download link)"
+            "JSON/JSONL file. This project's own copy is musique.json from the HippoRAG_2 "
+            "dataset on Hugging Face: "
+            "https://huggingface.co/datasets/osunlp/HippoRAG_2/blob/main/musique.json"
         )
 
     output_dir.mkdir(parents=True, exist_ok=True)

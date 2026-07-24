@@ -2,6 +2,7 @@ ideas/
 .env
 env/
 MemoryDecoder/
+dataset/
 runs/
 temp/
 logs/

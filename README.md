@@ -9,54 +9,61 @@ It works in three stages:
 3. **Synthesize** — at answer time, generate a task-specific adapter on the fly from
    that memory and patch it onto the backbone for one generation call.
 
-Works with **HotpotQA**, **NarrativeQA**, and **MuSiQue**. Full design background is in
-`ideas/sigma proposal v1.pdf`; the [How it works](#how-it-works) section at the bottom
-covers implementation details if you want them — everything above it is just "how to run
-this."
+Works with **NarrativeQA** and **MuSiQue**. Full design background is in `ideas/sigma
+proposal v1.pdf`; the [How it works](#how-it-works) section at the bottom covers
+implementation details if you want them — everything above it is just "how to run this."
 
 ---
 
-## Quick Start (HotpotQA, ~5 commands)
+## Quick Start (MuSiQue, ~6 commands)
 
-HotpotQA needs no download step, so it's the fastest way to see the whole pipeline run
-once. Swap in NarrativeQA/MuSiQue later using the [full steps](#1-install) below.
+MuSiQue's raw data is a single downloaded file, so it's the fastest way to see the whole
+pipeline run once. Swap in NarrativeQA later using the [full steps](#1-install) below.
 
 ```bash
 # 0. Install (also registers the sigma-* commands used below)
 pip install -e .
 echo "OPENAI_API_KEY=sk-..." > .env    # needed for step 2
 
-# 1. Generate training QA pairs from HotpotQA (small run: 100 examples)
-sigma-reflections --dataset hotpotqa --mode openai \
-    --output data/hotpotqa_reflections.jsonl --limit 100
+# 1. Download musique.json into data/MuSiQue/ -- see step 2 below for the link, then:
+sigma-process-musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
 
-# 2. Train 8 small LoRA adapters on that data
+# 2. Generate training QA pairs (small run: 100 examples)
+sigma-reflections --dataset musique --mode openai \
+    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
+    --output data/musique_reflections.jsonl --limit 100
+
+# 3. Train 8 small LoRA adapters on that data
 sigma-bootstrap \
-    --reflections_path data/hotpotqa_reflections.jsonl \
+    --reflections_path data/musique_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap --num_adapters 8 --lora_rank 8
 
-# 3. Compress those adapters into one memory file
+# 4. Compress those adapters into one memory file
 sigma-consolidate \
     --bootstrap_dir runs/bootstrap \
-    --reflections_path data/hotpotqa_reflections.jsonl \
+    --reflections_path data/musique_reflections.jsonl \
     --output_path runs/memory_entry.pt
 
-# 4. Evaluate: SIGMA-adapted backbone vs. the plain backbone, scored with EM/F1
+# 5. Evaluate: SIGMA-adapted backbone vs. the plain backbone, scored with EM/F1
 sigma-evaluate \
     --memory_entry_path runs/memory_entry.pt \
-    --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
+    --model_name_or_path Qwen/Qwen2.5-0.5B --dataset musique \
+    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/musique_questions_chunks.jsonl --limit 200
 ```
 
-Step 4 prints something like:
+Step 5 prints something like:
 
 ```
 Baseline: EM=0.1200 F1=0.1850 (n=200)
 SIGMA:    EM=0.1550 F1=0.2210 (n=200)
 ```
 
-That's the whole loop. Everything below explains each step in more depth and covers
-NarrativeQA/MuSiQue, which need one extra data-prep step first.
+That's the whole loop (this smoke test evaluates on the same questions it trained on --
+see step 7 for a real held-out setup). Everything below explains each step in more depth
+and covers NarrativeQA too.
 
 ---
 
@@ -64,7 +71,7 @@ NarrativeQA/MuSiQue, which need one extra data-prep step first.
 
 1. [1. Install](#1-install)
 2. [2. Get the raw datasets](#2-get-the-raw-datasets)
-3. [3. Process NarrativeQA/MuSiQue into chunks](#3-process-narrativeqamusique-into-chunks)
+3. [3. Process into chunks](#3-process-into-chunks)
 4. [4. Generate training QA pairs](#4-generate-training-qa-pairs)
 5. [5. Train bootstrap adapters](#5-train-bootstrap-adapters)
 6. [6. Consolidate into a memory](#6-consolidate-into-a-memory)
@@ -103,7 +110,15 @@ useful if a long run dies partway through and you want to see what happened.
 
 ## 2. Get the raw datasets
 
-**HotpotQA** — nothing to do, it loads straight from Hugging Face in step 4.
+**MuSiQue** — this project's copy is `musique.json` from the **HippoRAG_2** dataset on
+Hugging Face (a fixed ~1,000-question subset), not the official StonyBrookNLP repo
+directly:
+
+**https://huggingface.co/datasets/osunlp/HippoRAG_2/blob/main/musique.json**
+
+Download it into `data/MuSiQue/musique.json`. See `data/MuSiQue/README.md` for the
+record shape and an alternative source (the official StonyBrookNLP repo, if you want a
+real train/dev split instead of this fixed subset).
 
 **NarrativeQA** — clone the official repo:
 
@@ -114,29 +129,19 @@ git clone https://github.com/google-deepmind/narrativeqa data/NarrativeQA
 You don't need to run its `download_stories.sh` — SIGMA uses each story's Wikipedia
 *summary* instead of the full book text. See `data/NarrativeQA/README.md`.
 
-**MuSiQue** — download a copy from [`StonyBrookNLP/musique`](https://github.com/StonyBrookNLP/musique)
-(their README has the current download link) and place a split file under
-`data/MuSiQue/`. See `data/MuSiQue/README.md` for details and an alternative source.
+## 3. Process into chunks
 
-> These two GitHub links couldn't be re-verified from this environment (no live
-> browsing). If either is dead, search "NarrativeQA deepmind github" / "MuSiQue
-> StonyBrookNLP github".
-
-## 3. Process NarrativeQA/MuSiQue into chunks
-
-**Required** for NarrativeQA and MuSiQue before step 4 (HotpotQA skips this — go
-straight to step 4). This splits each document into overlapping chunks and writes them
-in the format step 4 expects:
+**Required** before step 4 -- this splits each document into overlapping chunks and
+writes them in the format step 4 expects. Both converters live in `data_process/`
+(mirroring MEMO's own `data_processing_utils/`):
 
 ```bash
+# MuSiQue
+sigma-process-musique --musique_path data/MuSiQue/musique.json --output_dir data/MuSiQue
+
 # NarrativeQA (once per split you plan to use)
 sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split train
 sigma-process-narrativeqa --narrativeqa_dir data/NarrativeQA --split valid
-
-# MuSiQue
-sigma-process-musique \
-    --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl \
-    --output_dir data/MuSiQue
 ```
 
 If you skip this, step 4's loaders will fail with a clear error telling you exactly
@@ -165,21 +170,17 @@ it" and cross-document questions. Details are in
 [How it works](#how-the-reflection-pipeline-works).
 
 ```bash
-# HotpotQA
-sigma-reflections --dataset hotpotqa --mode openai \
-    --output data/hotpotqa_reflections.jsonl --limit 100
+# MuSiQue (needs step 3 run first)
+sigma-reflections --dataset musique --mode openai \
+    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
+    --output data/musique_reflections.jsonl --limit 100
 
 # NarrativeQA (needs step 3 run first)
 sigma-reflections --dataset narrativeqa --mode openai \
     --corpus_path data/NarrativeQA/narrativeqa_train_corpus_chunks.jsonl \
     --qns_path data/NarrativeQA/narrativeqa_train_questions_chunks.jsonl \
     --output data/narrativeqa_reflections.jsonl --limit 100
-
-# MuSiQue (needs step 3 run first)
-sigma-reflections --dataset musique --mode openai \
-    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
-    --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
-    --output data/musique_reflections.jsonl --limit 100
 ```
 
 `--corpus_path`/`--qns_path` are two explicit file paths, matching MEMO's own
@@ -211,7 +212,7 @@ step 4:
 
 ```bash
 sigma-bootstrap \
-    --reflections_path data/hotpotqa_reflections.jsonl \
+    --reflections_path data/musique_reflections.jsonl \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
     --output_dir runs/bootstrap \
     --num_adapters 8 --lora_rank 8
@@ -231,7 +232,7 @@ Compresses the adapters from step 5 into one compact memory file:
 ```bash
 sigma-consolidate \
     --bootstrap_dir runs/bootstrap \
-    --reflections_path data/hotpotqa_reflections.jsonl \
+    --reflections_path data/musique_reflections.jsonl \
     --output_path runs/memory_entry.pt
 ```
 
@@ -243,10 +244,13 @@ Compares the SIGMA-adapted backbone against the same backbone with no memory att
 on held-out questions, scored with exact-match (EM) and F1:
 
 ```bash
-# HotpotQA (default)
+# MuSiQue -- see the note below before running this one
 sigma-evaluate \
-    --memory_entry_path runs/memory_entry.pt \
-    --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
+    --memory_entry_path runs/musique/memory_entry.pt \
+    --model_name_or_path Qwen/Qwen2.5-0.5B \
+    --dataset musique \
+    --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl --limit 200
 
 # NarrativeQA
 sigma-evaluate \
@@ -255,23 +259,16 @@ sigma-evaluate \
     --dataset narrativeqa \
     --corpus_path data/NarrativeQA/narrativeqa_valid_corpus_chunks.jsonl \
     --qns_path data/NarrativeQA/narrativeqa_valid_questions_chunks.jsonl --limit 200
-
-# MuSiQue -- see the note below before running this one
-sigma-evaluate \
-    --memory_entry_path runs/musique/memory_entry.pt \
-    --model_name_or_path Qwen/Qwen2.5-0.5B \
-    --dataset musique \
-    --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
-    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl --limit 200
 ```
 
 `--corpus_path`/`--qns_path` (same two explicit file paths as step 4, matching MEMO's
 own convention) let you point evaluation at a *different* chunked file than the one you
-trained on -- important for MuSiQue specifically, which has no `--split` flag:
-`sigma-process-musique` (step 3) always writes the same filenames into whatever
-`--output_dir` you give it. So to evaluate on data the model wasn't trained on, run
-step 3 **twice** — once for your train file, once for a dev/held-out file — into two
-different directories, and point `--corpus_path`/`--qns_path` at the dev one here:
+trained on. This matters most for MuSiQue: this project's own `musique.json` (see step
+2) is a single fixed ~1,000-question subset, not a pre-split train/dev pair, so
+`sigma-process-musique` always writes the same filenames into whatever `--output_dir`
+you give it. For a genuine held-out evaluation, get a separate train/dev pair from the
+official StonyBrookNLP repo (see `data/MuSiQue/README.md`) and run step 3 **twice** —
+once per file, into two different directories:
 
 ```bash
 sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_train.jsonl --output_dir data/MuSiQue/train
@@ -279,7 +276,7 @@ sigma-process-musique --musique_path data/MuSiQue/musique_ans_v1.0_dev.jsonl   -
 # ... then use data/MuSiQue/train's files for step 4 and data/MuSiQue/dev's for step 7
 ```
 
-Pointing step 4 and step 7 at the same MuSiQue files trains and evaluates on the
+Pointing step 4 and step 7 at the same chunked files trains and evaluates on the
 same questions, which will look better than it is.
 
 This is single-shot evaluation — one question in, one answer out. MEMO's own evaluation
@@ -295,14 +292,16 @@ tree and route between them automatically instead of picking one manually:
 
 ```bash
 sigma-build-tree \
-    --task hotpotqa=runs/hotpotqa/memory_entry.pt \
     --task musique=runs/musique/memory_entry.pt \
     --task narrativeqa=runs/narrativeqa/memory_entry.pt \
     --output_path runs/memory_tree.pt
 
 sigma-evaluate \
     --memory_tree_path runs/memory_tree.pt \
-    --model_name_or_path Qwen/Qwen2.5-0.5B --limit 200
+    --model_name_or_path Qwen/Qwen2.5-0.5B \
+    --dataset musique \
+    --corpus_path data/MuSiQue/dev/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/dev/musique_questions_chunks.jsonl --limit 200
 ```
 
 All tasks in one tree must have been trained with the same `--lora_rank` and
@@ -319,6 +318,9 @@ Evaluation can pull in a third set of predictions purely as a comparison point (
 sigma-evaluate \
     --memory_entry_path runs/memory_entry.pt \
     --model_name_or_path Qwen/Qwen2.5-0.5B \
+    --dataset musique \
+    --corpus_path data/MuSiQue/musique_corpus_chunks.jsonl \
+    --qns_path data/MuSiQue/musique_questions_chunks.jsonl \
     --baseline_model openai:gpt-4o-mini --limit 200
 ```
 
@@ -402,15 +404,16 @@ of a specific published formula:
 <details>
 <summary>Where NarrativeQA/MuSiQue's raw files actually come from (click to expand)</summary>
 
-Neither is reliably published on Hugging Face, so both are processed from local files
-(step 3: `data_sources/process_narrativeqa.py`, `data_sources/process_musique.py`,
-mirroring MEMO's own `data_processing_utils/convert_*_to_chunks_jsonl.py`), then loaded
-from the resulting chunked JSONL (`data_sources/narrativeqa.py`,
-`data_sources/musique.py`) instead of `datasets.load_dataset`. `process_musique.py`
-accepts either the official one-JSON-object-per-line format or a single JSON
-array/object, auto-detected. A missing `--corpus_path`/`--qns_path`, or a file missing
-the chunked content step 3 produces, raises a clear error naming the exact command to
-run.
+Neither is reliably published on Hugging Face in a form this pipeline can read directly,
+so both are processed from local files first (step 3: `data_process/process_narrativeqa.py`,
+`data_process/process_musique.py`, mirroring MEMO's own
+`data_processing_utils/convert_*_to_chunks_jsonl.py`), then loaded from the resulting
+chunked JSONL (`data_sources/narrativeqa.py`, `data_sources/musique.py`) instead of
+`datasets.load_dataset`. `process_musique.py` accepts either the official
+one-JSON-object-per-line format or a single JSON array/object (this project's own
+`musique.json`, from HippoRAG_2 -- see step 2), auto-detected. A missing
+`--corpus_path`/`--qns_path`, or a file missing the chunked content step 3 produces,
+raises a clear error naming the exact command to run.
 
 **Loading convention matches MEMO exactly, not just the chunk file schema:**
 `data_sources/musique.py`/`narrativeqa.py` take `--corpus_path`/`--qns_path` as two
@@ -433,6 +436,16 @@ instead.
 pyproject.toml   # packaging: deps + the sigma-* console scripts used throughout this README
 
 src/sigma/
+├── data_process/               # step 3: raw dataset -> MEMO-shaped chunked JSONL, mirroring
+│   │                             # MEMO's own data_processing_utils/ as a distinct concern
+│   │                             # from data_sources/'s loaders below
+│   ├── chunking.py               # MEMO's chunk_text word-count sliding-window algorithm
+│   ├── process_musique.py       # raw MuSiQue (musique.json) -> chunked corpus/questions JSONL
+│   └── process_narrativeqa.py   # raw NarrativeQA (documents/qaps/summaries.csv) -> same
+├── data_sources/               # normalized loaders: NarrativeQA, MuSiQue -> SourceExample
+│   ├── base.py                  # SourceExample schema
+│   ├── narrativeqa.py            # reads data_process/process_narrativeqa.py's output (required)
+│   └── musique.py                # reads data_process/process_musique.py's output (required)
 ├── reflections.py             # step 4: reflection generation CLI, any data_sources/ dataset
 ├── reflection/                  # supporting modules for step 4 (grouped like adapters/,
 │                                 # consolidate/, memory/ below)
@@ -442,18 +455,8 @@ src/sigma/
 │   │                                # reflection pipeline works" above)
 │   ├── hf_client.py                # --mode hf: local open-source model, same chat.completions
 │   │                                # .create(...) shape as the OpenAI client
-│   ├── dataset.py                  # Q_final loading + type/level filtering, bootstrap sampling,
-│   │                                # answer-masked tokenization
-│   └── hotpotqa_legacy.py          # legacy single-call HotpotQA loader (kept for its
-│                                    # load_hotpotqa_examples, reused by data_sources/hotpotqa.py)
-├── data_sources/               # normalized loaders: HotpotQA, NarrativeQA, MuSiQue -> SourceExample
-│   ├── base.py                  # SourceExample schema
-│   ├── chunking.py               # MEMO's chunk_text word-count sliding-window algorithm
-│   ├── process_narrativeqa.py   # step 3: raw NarrativeQA -> chunked corpus/questions JSONL
-│   ├── process_musique.py       # step 3: raw MuSiQue -> chunked corpus/questions JSONL
-│   ├── hotpotqa.py
-│   ├── narrativeqa.py            # reads process_narrativeqa.py's output (required)
-│   └── musique.py                # reads process_musique.py's output (required)
+│   └── dataset.py                  # Q_final loading + type/level filtering, bootstrap sampling,
+│                                    # answer-masked tokenization
 ├── adapters/shared_lora.py    # SharedLoRALinear: frozen shared A, trainable per-adapter B
 ├── train_bootstrap.py         # step 5
 ├── consolidate/
@@ -491,6 +494,6 @@ ideas/         # the SIGMA proposal PDF this implementation follows (gitignored)
 MemoryDecoder/ # reference repo this codebase's structure/CLI style is modeled on (gitignored)
 MeMo/          # reference repo for the MEMO method SIGMA builds on (gitignored) -- not
                # code we run directly (different infra: vLLM serving, DeepSpeed SFT,
-               # LLM-judge eval); data_sources/ and baselines/ are informed by its
-               # dataset/baseline conventions
+               # LLM-judge eval); data_process/, data_sources/, and baselines/ are informed
+               # by its dataset/baseline conventions
 ```

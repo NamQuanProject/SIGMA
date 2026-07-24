@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REFLECTIONS=${REFLECTIONS:-data/hotpotqa_reflections.jsonl}
+REFLECTIONS=${REFLECTIONS:-data/musique_reflections.jsonl}
 MODEL=${MODEL:-Qwen/Qwen2.5-0.5B}
 OUTPUT_DIR=${OUTPUT_DIR:-runs/bootstrap}
 NUM_ADAPTERS=${NUM_ADAPTERS:-8}

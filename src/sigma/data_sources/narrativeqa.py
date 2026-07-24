@@ -1,6 +1,6 @@
 """NarrativeQA source adapter.
 
-Reads the **chunked corpus/questions JSONL** produced by ``process_narrativeqa.py`` --
+Reads the **chunked corpus/questions JSONL** produced by ``data_process/process_narrativeqa.py`` --
 this is the mandatory first stage, mirroring MEMO's own two-stage pipeline
 (``data_processing_utils`` -> ``data_synthesis_pipeline``). Run that script once per
 split before calling ``load_examples`` here; a missing file raises a clear error telling
@@ -22,7 +22,7 @@ loads them the same way MEMO's own ``data_synthesis_pipeline/nqa_data_utils.py``
   reproducible without their exact chunk IDs, so it's intentionally not ported here --
   every ``limit`` value here uses the general "first N in file order" rule instead.
 
-See ``process_narrativeqa.py`` for where the raw data comes from and what it does
+See ``data_process/process_narrativeqa.py`` for where the raw data comes from and what it does
 (chunks each story's Wikipedia summary, following MEMO's own
 ``convert_narrativeqa_to_chunks_jsonl.py`` algorithm).
 """
