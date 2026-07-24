@@ -10,11 +10,17 @@ logs/
 __pycache__/
 *.py[cod]
 MeMO/
-data/
 
 # Raw downloaded dataset content -- see data/NarrativeQA/README.md and
 # data/MuSiQue/README.md for what goes here and how to get it. Keep the READMEs
-# themselves tracked so the folders' purpose is documented in the repo.
+# themselves tracked so the folders' purpose is documented in the repo. Git can't
+# re-include a file inside an excluded *directory* (only inside an excluded pattern),
+# so the directories themselves must be un-ignored before their per-file exceptions
+# below can take effect -- a plain "data/" blanket rule here would silently defeat the
+# "!...README.md" lines that follow, which is what happened before this comment existed.
+data/*
+!data/NarrativeQA/
+!data/MuSiQue/
 data/NarrativeQA/*
 !data/NarrativeQA/README.md
 data/MuSiQue/*

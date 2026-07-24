@@ -1,4 +1,6 @@
-"""Evaluate a SIGMA memory against the unmodified backbone on HotpotQA.
+"""Evaluate a SIGMA memory against the unmodified backbone on any of the supported
+source datasets (HotpotQA, NarrativeQA, MuSiQue -- ``data_sources/LOADERS``, the same
+loaders ``reflections.py`` uses to generate the reflections a memory was trained on).
 
 Works with either a single-task ``MemoryEntry`` (``--memory_entry_path``) or a
 multi-task ``MemoryTree`` (``--memory_tree_path``, see ``build_memory_tree.py``) --
@@ -6,11 +8,17 @@ exactly one is required. Both expose the same ``route(context_fn) -> (entry, con
 shape (``memory/single_entry.py``, ``memory/tree.py``), so the routing/synthesis/eval
 logic below doesn't need to know which one it has.
 
-For each HotpotQA validation question: route to a task (trivial for a single entry;
-GW-distance descent + own-space Mahalanobis for a tree, eq. 25-28), synthesize a
-task-specific adapter from the routed entry (eq. 23-24), patch it onto the frozen
-backbone, generate an answer, then compare against the same backbone with no adapter
-applied (baseline).
+For each validation question in the chosen dataset: route to a task (trivial for a
+single entry; GW-distance descent + own-space Mahalanobis for a tree, eq. 25-28),
+synthesize a task-specific adapter from the routed entry (eq. 23-24), patch it onto the
+frozen backbone, generate an answer, then compare against the same backbone with no
+adapter applied (baseline). This is single-shot (one question in, one answer out, scored
+with EM/F1) -- there is no multi-turn sub-question loop or judge model here, unlike
+MEMO's own evaluation harness (``MeMo/evaluation_pipeline/``), which is built around a
+two-model (LM + memory-tuned SM) conversation. SIGMA has no equivalent architecture (one
+backbone, one synthesized adapter, one generation call), so this script is the
+SIGMA-native analogue of MEMO's single-turn/closed-book paradigms specifically, not a
+port of its structured/unstructured multi-turn protocols.
 """
 
 from __future__ import annotations
@@ -24,7 +32,7 @@ from tqdm.auto import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from .backends import build_backend
-from .hotpotqa_reflections import load_hotpotqa_examples
+from .data_sources import LOADERS, build_loader_kwargs
 from .memory.apply import apply_adapter, apply_entry, attach_memory, attach_memory_tree
 from .memory.entry import MemoryEntry
 from .memory.single_entry import SingleEntryMemory
@@ -39,16 +47,37 @@ DTYPE_MAP = {"fp32": torch.float32, "fp16": torch.float16, "bf16": torch.bfloat1
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate a SIGMA memory on HotpotQA")
+    parser = argparse.ArgumentParser(
+        description="Evaluate a SIGMA memory on a source dataset (HotpotQA, NarrativeQA, MuSiQue)."
+    )
     memory_group = parser.add_mutually_exclusive_group(required=True)
     memory_group.add_argument("--memory_entry_path", type=Path, default=None, help="A single-task MemoryEntry")
     memory_group.add_argument(
         "--memory_tree_path", type=Path, default=None, help="A multi-task MemoryTree (build_memory_tree.py)"
     )
     parser.add_argument("--model_name_or_path", type=str, required=True)
+    parser.add_argument("--dataset", choices=sorted(LOADERS.keys()), default="hotpotqa")
     parser.add_argument("--split", type=str, default="validation")
-    parser.add_argument("--dataset_name", type=str, default=None, help="Override the HF HotpotQA repo id")
-    parser.add_argument("--config", type=str, default=None)
+    parser.add_argument("--dataset_name", type=str, default=None, help="Override the HF dataset repo id (--dataset hotpotqa only)")
+    parser.add_argument("--config", type=str, default=None, help="HF dataset config, e.g. distractor/fullwiki (--dataset hotpotqa only)")
+    parser.add_argument(
+        "--streaming", action="store_true", help="Use streaming dataset access (--dataset hotpotqa only)"
+    )
+    parser.add_argument(
+        "--narrativeqa_dir",
+        type=Path,
+        default=None,
+        help="Directory containing narrativeqa_<split>_corpus_chunks.jsonl / _questions_chunks.jsonl "
+        "(produced by process_narrativeqa.py). Required for --dataset narrativeqa.",
+    )
+    parser.add_argument(
+        "--musique_dir",
+        type=Path,
+        default=None,
+        help="Directory containing musique_corpus_chunks.jsonl / musique_questions_chunks.jsonl "
+        "(produced by process_musique.py, pointed at a held-out MuSiQue file -- see the README). "
+        "Required for --dataset musique.",
+    )
     parser.add_argument("--limit", type=int, default=100)
     parser.add_argument("--max_new_tokens", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=1, help="alpha ensembling samples, eq. 24")
@@ -132,16 +161,10 @@ def main() -> None:
     model = model.to(device)
     model.eval()
 
-    examples = list(
-        load_hotpotqa_examples(
-            split=args.split,
-            dataset_name=args.dataset_name,
-            config=args.config,
-            limit=args.limit,
-            seed=args.seed,
-        )
-    )
-    logger.info(f"Evaluating on {len(examples)} HotpotQA examples")
+    loader = LOADERS[args.dataset]
+    loader_kwargs = build_loader_kwargs(args)
+    examples = list(loader(**loader_kwargs))
+    logger.info(f"Evaluating on {len(examples)} {args.dataset} examples")
 
     external_backend = None
     if args.baseline_model:

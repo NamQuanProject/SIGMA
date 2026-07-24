@@ -109,6 +109,15 @@ def train_one_adapter(
             progress.set_postfix(loss=f"{last_loss:.4f}")
         logger.info(f"  epoch {epoch}: loss={last_loss:.4f}")
     model.eval()
+
+    # accelerator.prepare() above registers this adapter's optimizer/dataloader with the
+    # Accelerator instance, which persists across the whole M-adapter loop in main() --
+    # without releasing them here, accelerate keeps every previous adapter's optimizer
+    # state (momentum/variance buffers, roughly 2x param count for Adam) alive for the
+    # rest of the run, so memory grows monotonically adapter over adapter until it's
+    # exhausted. free_memory() is accelerate's documented way to drop those references
+    # "between two trainings with different models/optimizers" -- exactly this loop.
+    accelerator.free_memory(optimizer, dataloader)
     return last_loss
 
 

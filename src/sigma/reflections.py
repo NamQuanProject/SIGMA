@@ -35,7 +35,7 @@ from typing import Any, Iterator
 from loguru import logger
 from tqdm import tqdm
 
-from .data_sources import LOADERS, SourceExample
+from .data_sources import LOADERS, SourceExample, build_loader_kwargs
 from .hotpotqa_reflections import write_jsonl
 from .reflection_pipeline import (
     build_documents,
@@ -51,34 +51,6 @@ from .utils.env import load_environment
 from .utils.logging_setup import setup_logging
 
 DEFAULT_HF_MODEL = "Qwen/Qwen2.5-7B-Instruct"
-
-
-def build_loader_kwargs(args: argparse.Namespace) -> dict[str, Any]:
-    if args.dataset == "hotpotqa":
-        return dict(
-            split=args.split,
-            dataset_name=args.dataset_name,
-            config=args.config,
-            streaming=args.streaming,
-            limit=args.limit,
-            seed=args.seed,
-        )
-    if args.dataset == "narrativeqa":
-        if args.narrativeqa_dir is None:
-            raise ValueError(
-                "--narrativeqa_dir is required for --dataset narrativeqa -- see "
-                "src/sigma/data_sources/narrativeqa.py for the required file layout "
-                "(produced by process_narrativeqa.py)"
-            )
-        return dict(narrativeqa_dir=args.narrativeqa_dir, split=args.split, limit=args.limit, seed=args.seed)
-    # musique
-    if args.musique_dir is None:
-        raise ValueError(
-            "--musique_dir is required for --dataset musique -- see "
-            "src/sigma/data_sources/musique.py for the required file layout "
-            "(produced by process_musique.py)"
-        )
-    return dict(musique_dir=args.musique_dir, limit=args.limit, seed=args.seed)
 
 
 def export_stage1_prompts(examples: Iterator[SourceExample]) -> Iterator[dict[str, Any]]:
