@@ -36,9 +36,10 @@ def add_dataset_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
+        default=None,
         help="The first N in file order (matching MEMO), not a random sample -- for "
-        "narrativeqa this counts unique source documents.",
+        "narrativeqa this counts unique source documents. Default: no limit, run on every "
+        "row in --qns_path.",
     )
 
 

@@ -125,10 +125,12 @@ def main() -> None:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
+        default=None,
         help="Maximum number of examples to process: the first N in file order (matching MEMO's "
         "own loaders, which have no shuffling) -- for narrativeqa this counts unique source "
-        "documents, not questions.",
+        "documents, not questions. Default: no limit, process every row in --qns_path. Since "
+        "cost/time scale with unique documents (not questions), start small (e.g. 10-100) to "
+        "sanity-check before running unlimited.",
     )
     parser.add_argument(
         "--mode",

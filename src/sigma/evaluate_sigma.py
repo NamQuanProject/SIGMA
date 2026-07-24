@@ -74,9 +74,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--limit",
         type=int,
-        default=100,
+        default=None,
         help="The first N in file order (matching MEMO's own loaders), not a random sample -- "
-        "for narrativeqa this counts unique source documents.",
+        "for narrativeqa this counts unique source documents. Default: no limit, evaluate on "
+        "every row in --qns_path (this runs 2+ generate() calls per example, so start small "
+        "to sanity-check timing before running unlimited).",
     )
     parser.add_argument("--max_new_tokens", type=int, default=16)
     parser.add_argument("--num_samples", type=int, default=1, help="alpha ensembling samples, eq. 24")

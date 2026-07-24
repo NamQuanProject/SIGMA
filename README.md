@@ -190,9 +190,10 @@ NarrativeQA this counts unique source documents, since MEMO's own `nqa_data_util
 subsets by document, not by question).
 
 **Cost/speed note:** this makes several LLM calls per document (not per question), and
-they run one at a time. A `--limit` of 100 questions can mean several minutes and a
-couple dollars of API spend depending on the dataset — start smaller (`--limit 10`) to
-sanity-check before committing to a big run.
+they run one at a time. **Omitting `--limit` processes every row in `--qns_path`** —
+there's no default cap. A `--limit` of 100 questions can already mean several minutes
+and a couple dollars of API spend depending on the dataset, so start smaller
+(`--limit 10`) to sanity-check before committing to a big or unlimited run.
 
 Two alternatives to `--mode openai`:
 
